@@ -2,7 +2,7 @@
 
 ## 当前策略
 
-`D:\Code\SRP-AGENT` 是唯一的 Git 仓库根目录，统一管理三个保留项目和配套文档。
+`D:\Code\SRP-AGENT-AGENT` 是唯一的 Git 仓库根目录，统一管理三个保留项目和配套文档。
 
 以下目录原先有独立 Git 元数据：
 
@@ -12,12 +12,12 @@
 - `aacr-bench/deliverables/aacr-bench-ppt/tmp-edit/localclone-test/myrepo-src/.git`
 - `aacr-bench/deliverables/aacr-bench-ppt/tmp-edit/localclone-test/myrepo-dst/.git`
 
-它们会改名为 `.git.backup`，以避免根仓库把这些目录记录成嵌套仓库。`.git.backup` 不会上传到 GitHub。
+它们已改名为 `.git.backup`，以避免根仓库把这些目录记录成嵌套仓库。`.git.backup` 不会上传到 GitHub。
 
 ## 提交前检查
 
 ```powershell
-cd D:\Code\SRP-AGENT
+cd D:\Code\SRP-AGENT-AGENT
 git status
 git status --ignored
 git ls-files

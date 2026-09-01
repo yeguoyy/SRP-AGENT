@@ -20,7 +20,7 @@ SRP-AGENT
 ## 快速运行 Demo
 
 ```powershell
-cd D:\Code\SRP-AGENT\ai-code-reviewer
+cd D:\Code\SRP-AGENT-AGENT\ai-code-reviewer
 .\.venv\Scripts\python.exe -m ai_reviewer.demo `
   --repo demo\sample_project `
   --mode mock `
@@ -31,7 +31,7 @@ cd D:\Code\SRP-AGENT\ai-code-reviewer
 也可以使用一键脚本：
 
 ```powershell
-cd D:\Code\SRP-AGENT\ai-code-reviewer
+cd D:\Code\SRP-AGENT-AGENT\ai-code-reviewer
 .\run_demo.ps1 -Repo .\demo\sample_project -Mode mock
 ```
 
@@ -56,4 +56,4 @@ AACR-Bench 通过适配器调用 `ai-reviewer`，将评审结果转换为统一�
 
 ## Git 约定
 
-本目录使用一个根级 Git 仓库管理整个 SRP-AGENT。三个项目原本的 Git 元数据会保留为各自目录下的 `.git.backup`，并被 `.gitignore` 忽略；它们不会作为嵌套仓库上传。
+本目录使用一个根级 Git 仓库管理整个 SRP-AGENT。三个项目原本的 Git 元数据已保留为各自目录下的 `.git.backup`，并被 `.gitignore` 忽略；它们不会作为嵌套仓库上传。

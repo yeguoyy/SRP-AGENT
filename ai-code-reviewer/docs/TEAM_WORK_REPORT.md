@@ -4,7 +4,7 @@
 >
 > 日期：2026 年 9 月 1 日
 >
-> 当前主项目：`D:\Code\SRP\ai-code-reviewer`
+> 当前主项目：`D:\Code\SRP-AGENT\ai-code-reviewer`
 
 ---
 
@@ -19,13 +19,13 @@
 当前可运行的核心 Demo 位于：
 
 ```text
-D:\Code\SRP\ai-code-reviewer
+D:\Code\SRP-AGENT\ai-code-reviewer
 ```
 
 AACR-Bench 评测框架位于：
 
 ```text
-D:\Code\SRP\aacr-bench
+D:\Code\SRP-AGENT\aacr-bench
 ```
 
 两者是**独立项目**。AACR-Bench 不是被复制进 ai-code-reviewer，而是通过命令行调用 `ai-reviewer`，再把输出转换为 AACR 的统一格式。
@@ -37,7 +37,7 @@ D:\Code\SRP\aacr-bench
 这里的“原始版本”指：
 
 ```text
-D:\Code\SRP\ai-code-reviewer-original-clean
+D:\Code\SRP-AGENT\ai-code-reviewer-original-clean
 ```
 
 该目录与当前主项目的 Git 基线都对应 `a065f22`，因此适合作为改造前对照。
@@ -47,7 +47,7 @@ D:\Code\SRP\ai-code-reviewer-original-clean
 新增目录：
 
 ```text
-D:\Code\SRP\ai-code-reviewer\src\ai_reviewer\demo
+D:\Code\SRP-AGENT\ai-code-reviewer\src\ai_reviewer\demo
 ```
 
 新增能力：
@@ -85,7 +85,7 @@ D:\Code\SRP\ai-code-reviewer\src\ai_reviewer\demo
 修改：
 
 ```text
-D:\Code\SRP\ai-code-reviewer\src\ai_reviewer\config.py
+D:\Code\SRP-AGENT\ai-code-reviewer\src\ai_reviewer\config.py
 ```
 
 主要改变：
@@ -113,7 +113,7 @@ security → logic → patterns → performance → style
 修改：
 
 ```text
-D:\Code\SRP\ai-code-reviewer\src\ai_reviewer\agents\anthropic_client.py
+D:\Code\SRP-AGENT\ai-code-reviewer\src\ai_reviewer\agents\anthropic_client.py
 ```
 
 新版 Anthropic SDK 的生成方法不再直接接受部分 `temperature` 参数。当前代码将相关参数放进 `extra_body`，保持与新版 SDK 及 Anthropic 兼容网关的适配能力。
@@ -123,18 +123,18 @@ D:\Code\SRP\ai-code-reviewer\src\ai_reviewer\agents\anthropic_client.py
 新增：
 
 ```text
-D:\Code\SRP\ai-code-reviewer\tests\demo
-D:\Code\SRP\ai-code-reviewer\DEMO_GUIDE.md
-D:\Code\SRP\ai-code-reviewer\docs\DEMO_ARCHITECTURE.md
-D:\Code\SRP\ai-code-reviewer\run_demo.ps1
+D:\Code\SRP-AGENT\ai-code-reviewer\tests\demo
+D:\Code\SRP-AGENT\ai-code-reviewer\DEMO_GUIDE.md
+D:\Code\SRP-AGENT\ai-code-reviewer\docs\DEMO_ARCHITECTURE.md
+D:\Code\SRP-AGENT\ai-code-reviewer\run_demo.ps1
 ```
 
 并更新：
 
 ```text
-D:\Code\SRP\ai-code-reviewer\tests\test_config.py
-D:\Code\SRP\ai-code-reviewer\uv.lock
-D:\Code\SRP\ai-code-reviewer\.gitignore
+D:\Code\SRP-AGENT\ai-code-reviewer\tests\test_config.py
+D:\Code\SRP-AGENT\ai-code-reviewer\uv.lock
+D:\Code\SRP-AGENT\ai-code-reviewer\.gitignore
 ```
 
 ---
@@ -144,7 +144,7 @@ D:\Code\SRP\ai-code-reviewer\.gitignore
 ### 1. 核心生产代码
 
 ```text
-D:\Code\SRP\ai-code-reviewer\src\ai_reviewer
+D:\Code\SRP-AGENT\ai-code-reviewer\src\ai_reviewer
 ├─ agents
 │  ├─ base.py                 # Agent 抽象和公共逻辑
 │  ├─ security.py             # 安全评审 Agent
@@ -185,7 +185,7 @@ D:\Code\SRP\ai-code-reviewer\src\ai_reviewer
 ### 2. SRP Demo 代码
 
 ```text
-D:\Code\SRP\ai-code-reviewer\src\ai_reviewer\demo
+D:\Code\SRP-AGENT\ai-code-reviewer\src\ai_reviewer\demo
 ├─ __init__.py
 ├─ __main__.py
 ├─ models.py                  # Demo 数据模型
@@ -202,7 +202,7 @@ D:\Code\SRP\ai-code-reviewer\src\ai_reviewer\demo
 ### 3. 示例项目和输出
 
 ```text
-D:\Code\SRP\ai-code-reviewer\demo
+D:\Code\SRP-AGENT\ai-code-reviewer\demo
 ├─ sample_project
 │  ├─ auth.py
 │  ├─ config.py
@@ -225,7 +225,7 @@ D:\Code\SRP\ai-code-reviewer\demo
 ### 1. 离线 Mock 模式，推荐比赛现场使用
 
 ```powershell
-cd D:\Code\SRP\ai-code-reviewer
+cd D:\Code\SRP-AGENT\ai-code-reviewer
 
 .\.venv\Scripts\python.exe -m ai_reviewer.demo `
   --repo demo\sample_project `
@@ -255,9 +255,9 @@ cd D:\Code\SRP\ai-code-reviewer
 报告文件：
 
 ```text
-D:\Code\SRP\ai-code-reviewer\demo\output\review-report.json
-D:\Code\SRP\ai-code-reviewer\demo\output\review-report.md
-D:\Code\SRP\ai-code-reviewer\demo\output\review-report.html
+D:\Code\SRP-AGENT\ai-code-reviewer\demo\output\review-report.json
+D:\Code\SRP-AGENT\ai-code-reviewer\demo\output\review-report.md
+D:\Code\SRP-AGENT\ai-code-reviewer\demo\output\review-report.html
 ```
 
 ### 2. 只运行规则检测
@@ -312,7 +312,7 @@ AACR-Bench 不是业务应用，而是代码评审能力的评测框架和数据
 目录：
 
 ```text
-D:\Code\SRP\aacr-bench
+D:\Code\SRP-AGENT\aacr-bench
 ```
 
 ### 2. 连接方式：适配器 + CLI 子进程
@@ -320,7 +320,7 @@ D:\Code\SRP\aacr-bench
 AACR 没有直接 import `ai_reviewer` 的 Python 包，而是通过新增适配器：
 
 ```text
-D:\Code\SRP\aacr-bench\evaluation\reviewers\ai_reviewer.py
+D:\Code\SRP-AGENT\aacr-bench\evaluation\reviewers\ai_reviewer.py
 ```
 
 调用当前项目安装出来的命令：
@@ -408,13 +408,13 @@ AACR 适配器转换为统一评论：
 结果目录采用 run 机制：
 
 ```text
-D:\Code\SRP\aacr-bench\evaluation\results\aacr_bench\ai-reviewer\<run_id>
+D:\Code\SRP-AGENT\aacr-bench\evaluation\results\aacr_bench\ai-reviewer\<run_id>
 ```
 
 指标目录：
 
 ```text
-D:\Code\SRP\aacr-bench\evaluation\metrics\aacr_bench\ai-reviewer\<run_id>
+D:\Code\SRP-AGENT\aacr-bench\evaluation\metrics\aacr_bench\ai-reviewer\<run_id>
 ```
 
 这样可以保留 `baseline`、`deepseek`、`spark` 等多次实验，避免结果互相覆盖。
@@ -426,7 +426,7 @@ D:\Code\SRP\aacr-bench\evaluation\metrics\aacr_bench\ai-reviewer\<run_id>
 ### 1. 先确认 ai-reviewer 已安装
 
 ```powershell
-cd D:\Code\SRP\ai-code-reviewer
+cd D:\Code\SRP-AGENT\ai-code-reviewer
 .\.venv\Scripts\ai-reviewer.exe --version
 ```
 
@@ -441,7 +441,7 @@ ai-reviewer, version 0.1.1
 进入：
 
 ```text
-D:\Code\SRP\aacr-bench\evaluation
+D:\Code\SRP-AGENT\aacr-bench\evaluation
 ```
 
 可以复制：
@@ -453,7 +453,7 @@ Copy-Item .env.example .env
 主要变量：
 
 ```powershell
-$env:AI_REVIEWER_COMMAND="D:\Code\SRP\ai-code-reviewer\.venv\Scripts\ai-reviewer.exe"
+$env:AI_REVIEWER_COMMAND="D:\Code\SRP-AGENT\ai-code-reviewer\.venv\Scripts\ai-reviewer.exe"
 $env:AI_REVIEWER_API_KEY="your-api-key"
 $env:AI_REVIEWER_BASE_URL="https://your-anthropic-compatible-gateway"
 $env:AI_REVIEWER_MODEL="your-model"
@@ -463,7 +463,7 @@ $env:AI_REVIEWER_AGENTS="3"
 也可以使用：
 
 ```powershell
-$env:AI_REVIEWER_CONFIG="D:\Code\SRP\ai-code-reviewer\config.yaml"
+$env:AI_REVIEWER_CONFIG="D:\Code\SRP-AGENT\ai-code-reviewer\config.yaml"
 ```
 
 如果 `config.yaml` 中已经包含 API Key、网关地址和 Agent 配置，可以不再重复设置对应环境变量。
@@ -471,7 +471,7 @@ $env:AI_REVIEWER_CONFIG="D:\Code\SRP\ai-code-reviewer\config.yaml"
 ### 3. 只跑 AACR 评审
 
 ```powershell
-cd D:\Code\SRP\aacr-bench\evaluation
+cd D:\Code\SRP-AGENT\aacr-bench\evaluation
 
 python -m pipeline run `
   --stage review `
@@ -536,7 +536,7 @@ python -m pipeline run `
 ### Demo 专项测试
 
 ```powershell
-cd D:\Code\SRP\ai-code-reviewer
+cd D:\Code\SRP-AGENT\ai-code-reviewer
 .\.venv\Scripts\python.exe -m pytest -q tests\demo --disable-warnings
 ```
 
@@ -585,7 +585,7 @@ All checks passed!
 
 ### 1. 建议保留
 
-#### `D:\Code\SRP\ai-code-reviewer`
+#### `D:\Code\SRP-AGENT\ai-code-reviewer`
 
 **必须保留。**
 
@@ -598,7 +598,7 @@ All checks passed!
 
 后续所有开发、演示、提交都以此目录为准。
 
-#### `D:\Code\SRP\aacr-bench`
+#### `D:\Code\SRP-AGENT\aacr-bench`
 
 **如果要做 AACR 评测，则保留。**
 
@@ -606,7 +606,7 @@ All checks passed!
 
 ### 2. 可选保留
 
-#### `D:\Code\SRP\ai-code-reviewer-original-clean`
+#### `D:\Code\SRP-AGENT\ai-code-reviewer-original-clean`
 
 **建议暂时保留。**
 
@@ -618,13 +618,13 @@ All checks passed!
 
 如果已经完成代码审查并且不再需要对比，可以删除。
 
-#### `D:\Code\SRP\ai-code-reviewer-base-2afd063`
+#### `D:\Code\SRP-AGENT\ai-code-reviewer-base-2afd063`
 
 **历史版本，可选保留。**
 
 对应较早的上游 commit `2afd063`，主要用于历史复现和版本比较。当前 Demo 不依赖它。
 
-#### `D:\Code\SRP\ai-coder-reviewer-master-Reimplement`
+#### `D:\Code\SRP-AGENT\ai-coder-reviewer-master-Reimplement`
 
 **另一个独立复现/重实现版本，可选保留。**
 
@@ -632,11 +632,11 @@ All checks passed!
 
 ### 3. 明确属于重复副本、通常不需要
 
-#### `D:\Code\SRP\base-clean`
+#### `D:\Code\SRP-AGENT\base-clean`
 
 这是 `ai-code-reviewer-base-2afd063` 的非 Git 清理副本。当前没有独立运行价值，通常可以删除。
 
-#### `D:\Code\SRP\reimplement-clean`
+#### `D:\Code\SRP-AGENT\reimplement-clean`
 
 这是 `ai-coder-reviewer-master-Reimplement` 的非 Git 清理副本。当前没有独立运行价值，通常可以删除。
 
@@ -645,24 +645,24 @@ All checks passed!
 以下文件不是运行依赖：
 
 ```text
-D:\Code\SRP\base.tar
-D:\Code\SRP\reimplement.tar
-D:\Code\SRP\reimplement-code.diff
+D:\Code\SRP-AGENT\archive\history\base.tar
+D:\Code\SRP-AGENT\archive\history\reimplement.tar
+D:\Code\SRP-AGENT\archive\history\reimplement-code.diff
 ```
 
 建议：
 
-- 需要保留历史备份：移到 `D:\Code\SRP\archive`；
+- 需要保留历史备份：移到 `D:\Code\SRP-AGENT\archive`；
 - 不需要回滚/复现：确认后删除；
 - 不要把这些压缩包和大补丁加入最终项目提交。
 
 以下内容也主要是资料或分析材料，不参与 Demo 运行：
 
 ```text
-D:\Code\SRP\AACR-Bench：Evaluating Automatic Code Review with Holistic Repository-Level Context.pdf
-D:\Code\SRP\比赛融合方案与思路.md
-D:\Code\SRP\deepseek_anthropic_doc.txt
-D:\Code\SRP\doc_*.txt
+D:\Code\SRP-AGENT\docs\references\AACR-Bench：Evaluating Automatic Code Review with Holistic Repository-Level Context.pdf
+D:\Code\SRP-AGENT\docs\competition\比赛融合方案与思路.md
+D:\Code\SRP-AGENT\docs\references\deepseek-anthropic-api\deepseek_anthropic_doc.txt
+D:\Code\SRP-AGENT\docs\references\deepseek-anthropic-api\raw\doc_*.txt
 ```
 
 其中 `比赛融合方案与思路.md` 可以作为参赛材料保留；其余资料可统一归档。
@@ -672,8 +672,8 @@ D:\Code\SRP\doc_*.txt
 以下文件属于运行/调试产物，不建议提交：
 
 ```text
-D:\Code\SRP\aacr-bench\evaluation\tmp_ai_reviewer_debug.txt
-D:\Code\SRP\aacr-bench\imgs\table3.png
+D:\Code\SRP-AGENT\aacr-bench\evaluation\tmp_ai_reviewer_debug.txt
+D:\Code\SRP-AGENT\aacr-bench\imgs\table3.png
 ```
 
 其中 `tmp_ai_reviewer_debug.txt` 是临时调试输出，应加入忽略规则或在确认不再需要后删除。
@@ -685,7 +685,7 @@ D:\Code\SRP\aacr-bench\imgs\table3.png
 如果要简化工作区，建议最终整理为：
 
 ```text
-D:\Code\SRP
+D:\Code\SRP-AGENT
 ├─ ai-code-reviewer       # 主项目 + SRP Demo，必须保留
 ├─ aacr-bench             # AACR 评测框架，需要评测时保留
 ├─ archive                # 历史版本、压缩包、diff、旧报告
@@ -709,10 +709,10 @@ reimplement-code.diff
 当前不建议直接删除主项目中已有的未提交改动：
 
 ```text
-D:\Code\SRP\ai-code-reviewer\src\ai_reviewer\agents\anthropic_client.py
-D:\Code\SRP\ai-code-reviewer\src\ai_reviewer\config.py
-D:\Code\SRP\ai-code-reviewer\tests\test_config.py
-D:\Code\SRP\ai-code-reviewer\uv.lock
+D:\Code\SRP-AGENT\ai-code-reviewer\src\ai_reviewer\agents\anthropic_client.py
+D:\Code\SRP-AGENT\ai-code-reviewer\src\ai_reviewer\config.py
+D:\Code\SRP-AGENT\ai-code-reviewer\tests\test_config.py
+D:\Code\SRP-AGENT\ai-code-reviewer\uv.lock
 ```
 
 这些文件是当前改造的一部分。
