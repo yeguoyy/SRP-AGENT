@@ -2,7 +2,7 @@
 
 ## 当前策略
 
-`D:\Code\SRP-AGENT-AGENT` 是唯一的 Git 仓库根目录，统一管理三个保留项目和配套文档。
+`D:\Code\SRP-AGENT` 是唯一的 Git 仓库根目录，统一管理三个保留项目和配套文档。
 
 以下目录原先有独立 Git 元数据：
 
@@ -17,7 +17,7 @@
 ## 提交前检查
 
 ```powershell
-cd D:\Code\SRP-AGENT-AGENT
+cd D:\Code\SRP-AGENT
 git status
 git status --ignored
 git ls-files

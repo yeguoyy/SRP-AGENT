@@ -20,7 +20,7 @@ SRP-AGENT
 ## 快速运行 Demo
 
 ```powershell
-cd D:\Code\SRP-AGENT-AGENT\ai-code-reviewer
+cd D:\Code\SRP-AGENT\ai-code-reviewer
 .\.venv\Scripts\python.exe -m ai_reviewer.demo `
   --repo demo\sample_project `
   --mode mock `
@@ -31,7 +31,7 @@ cd D:\Code\SRP-AGENT-AGENT\ai-code-reviewer
 也可以使用一键脚本：
 
 ```powershell
-cd D:\Code\SRP-AGENT-AGENT\ai-code-reviewer
+cd D:\Code\SRP-AGENT\ai-code-reviewer
 .\run_demo.ps1 -Repo .\demo\sample_project -Mode mock
 ```
 
