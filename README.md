@@ -1,6 +1,6 @@
-# SRP：智能代码评审与评测项目
+# SRP-AGENT：智能代码评审与评测项目
 
-本仓库集中管理 SRP 项目的三个主要部分：
+本仓库集中管理 SRP-AGENT 项目的三个主要部分：
 
 1. `ai-code-reviewer`：多智能体 AI 代码评审系统，包含 SRP 可执行 Demo。
 2. `aacr-bench`：自动代码评审评测框架，已接入 `ai-reviewer` 适配器。
@@ -9,7 +9,7 @@
 ## 项目结构
 
 ```text
-SRP
+SRP-AGENT
 ├── ai-code-reviewer                 # 当前主项目和 Demo
 ├── aacr-bench                       # AACR-Bench 评测项目
 ├── ai-code-reviewer-original-clean  # 原始基线
@@ -20,7 +20,7 @@ SRP
 ## 快速运行 Demo
 
 ```powershell
-cd D:\Code\SRP\ai-code-reviewer
+cd D:\Code\SRP-AGENT\ai-code-reviewer
 .\.venv\Scripts\python.exe -m ai_reviewer.demo `
   --repo demo\sample_project `
   --mode mock `
@@ -31,7 +31,7 @@ cd D:\Code\SRP\ai-code-reviewer
 也可以使用一键脚本：
 
 ```powershell
-cd D:\Code\SRP\ai-code-reviewer
+cd D:\Code\SRP-AGENT\ai-code-reviewer
 .\run_demo.ps1 -Repo .\demo\sample_project -Mode mock
 ```
 
@@ -56,4 +56,4 @@ AACR-Bench 通过适配器调用 `ai-reviewer`，将评审结果转换为统一�
 
 ## Git 约定
 
-本目录使用一个根级 Git 仓库管理整个 SRP。三个项目原本的 Git 元数据会保留为各自目录下的 `.git.backup`，并被 `.gitignore` 忽略；它们不会作为嵌套仓库上传。
+本目录使用一个根级 Git 仓库管理整个 SRP-AGENT。三个项目原本的 Git 元数据会保留为各自目录下的 `.git.backup`，并被 `.gitignore` 忽略；它们不会作为嵌套仓库上传。
