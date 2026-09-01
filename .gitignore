@@ -30,6 +30,7 @@
 # Secrets and local configuration
 **/.env
 **/.env.*
+!ai-code-reviewer/.env.example
 **/config.yaml
 **/*.pem
 **/.secrets/

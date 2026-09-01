@@ -139,3 +139,81 @@ def test_ai_reviewer_yaml_values_override_env(monkeypatch):
     assert cfg.anthropic.base_url == "https://yaml.example"
     assert cfg.anthropic.default_model == "yaml-model"
     assert cfg.agents[0].model == "yaml-security"
+
+
+
+def test_unified_llm_config_reads_protocol_and_api_key_env(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-test")
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(
+        textwrap.dedent(
+            """
+            llm:
+              protocol: openai_responses
+              base_url: https://api.openai.com/v1
+              api_key_env: OPENAI_API_KEY
+              model: gpt-4.1
+              max_tokens: 2048
+              retries: 2
+            github:
+              token: gh-test
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = load_config(cfg_file)
+
+    assert cfg.llm is not None
+    assert cfg.llm.protocol == "openai_responses"
+    assert cfg.llm.api_key == "openai-test"
+    assert cfg.llm.api_key_env == "OPENAI_API_KEY"
+    assert cfg.llm.model == "gpt-4.1"
+    assert cfg.llm.max_tokens == 2048
+    assert cfg.llm.retries == 2
+    assert cfg.anthropic.protocol == "openai_responses"
+
+
+
+def test_agents_inherit_shared_llm_model_when_not_overridden():
+    from ai_reviewer.config import _parse_config
+
+    cfg = _parse_config(
+        {
+            "llm": {
+                "protocol": "openai_responses",
+                "api_key": "key",
+                "model": "gpt-test-model",
+            },
+            "github": {"token": "gh"},
+            "agents": [
+                {"name": "security-reviewer", "focus_areas": ["security"]},
+                {
+                    "name": "logic-reviewer",
+                    "model": "specialist-model",
+                    "focus_areas": ["logic"],
+                },
+            ],
+        }
+    )
+
+    assert cfg.agents[0].model == "gpt-test-model"
+    assert cfg.agents[1].model == "specialist-model"
+
+
+def test_invalid_llm_protocol_is_reported():
+    from ai_reviewer.config import _parse_config, validate_config
+
+    cfg = _parse_config(
+        {
+            "llm": {
+                "protocol": "not-a-protocol",
+                "api_key": "key",
+                "model": "model",
+            },
+            "github": {"token": "gh"},
+        }
+    )
+
+    errors = validate_config(cfg)
+    assert any("Unsupported LLM protocol" in error for error in errors)

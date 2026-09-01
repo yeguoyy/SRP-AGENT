@@ -6,7 +6,8 @@ import logging
 import time
 from typing import Any
 
-from ai_reviewer.agents.anthropic_client import AnthropicClient, ToolRegistryProtocol
+from ai_reviewer.agents.anthropic_client import ToolRegistryProtocol
+from ai_reviewer.agents.protocol_client import ReviewClient
 from ai_reviewer.config import DEFAULT_SONNET_MODEL
 from ai_reviewer.context.builder import FINDINGS_SCHEMA
 from ai_reviewer.models.context import ReviewContext
@@ -27,7 +28,7 @@ class ReviewAgent:
 
     def __init__(
         self,
-        client: AnthropicClient,
+        client: ReviewClient,
         agent_id: str,
         system_blocks: list[dict[str, Any]],
         user_blocks: list[dict[str, Any]],

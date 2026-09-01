@@ -1,6 +1,6 @@
 # AI Code Reviewer
 
-**Multi-agent code review system that orchestrates multiple LLMs to produce comprehensive, consensus-based code reviews.**
+**Multi-agent code review system for local projects and GitHub Pull Requests.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -8,105 +8,129 @@
 
 ## Overview
 
-AI Code Reviewer takes a different approach to automated code review: instead of relying on a single model, it orchestrates **multiple specialized agents** that review code from different perspectives — security, performance, and code quality — then combines their findings into a unified, confidence-scored review.
+AI Code Reviewer orchestrates specialized agents for security, quality, performance,
+architecture, logic, and style review, then aggregates their findings into a
+confidence-scored result. The repository now has two complementary layers:
+
+- **SRP Demo**: a local, executable pipeline for scanning a project, running
+  deterministic rules and optional model agents, and writing JSON/Markdown/HTML reports.
+- **Full reviewer**: the existing GitHub PR/Webhook pipeline with multi-agent review,
+  aggregation, incremental reviews, inline comments, and thread resolution.
 
 ### Key Features
 
-- **Multi-Agent Architecture**: Run 2–5+ LLM agents in parallel, each with a specialized focus area
-- **Consensus-Based Scoring**: Findings are weighted by how many agents agree, reducing false positives
-- **Anthropic Messages API**: All models (Claude Sonnet 5, Haiku 4.5) accessed directly via the official `anthropic` SDK, streamed via `messages.stream`, with prompt caching, JSON-schema structured output, and tool use
-- **GitHub Integration**: Automatic PR reviews via webhooks, with inline comments and thread resolution
-- **Incremental Reviews**: Delta tracking detects new, fixed, and open findings across pushes — with convergence logic that stops reviewing when findings stabilize
-- **Documentation Review**: Rule-based check that flags missing doc updates on architecture-impacting PRs — works out-of-the-box on any repo by probing for `CLAUDE.md`, `AGENTS.md`, and architecture folders (zero LLM cost)
+- **Multi-Agent Architecture**: Run specialized reviewers in parallel and combine their results.
+- **Consensus-Based Scoring**: Cluster similar findings and rank them by severity, confidence, and agreement.
+- **Three LLM Wire Protocols**: Select one shared adapter in `config.yaml`:
+  - OpenAI Chat Completions (`openai_chat_completions`)
+  - OpenAI Responses (`openai_responses`)
+  - Anthropic Messages (`anthropic_messages`)
+- **Vendor-Neutral Routing**: DeepSeek does not need a separate client; use its OpenAI-compatible Chat Completions endpoint.
+- **GitHub Integration**: Review PRs manually or through a webhook; GitHub comments are only published by the full `review-pr`/`serve` flows, not by the local Demo.
+- **Documentation Review**: Rule-based checks can flag missing documentation updates without model calls.
 
-For the full technical deep-dive — pipeline flowcharts, scoring formulas, convergence state machine, and prompt engineering — see the **[Architecture Documentation](docs/ARCHITECTURE.md)**.
+For the technical architecture, scoring formulas, and review state machine, see
+[Architecture Documentation](docs/ARCHITECTURE.md). For model configuration, see
+[Model Integration](docs/MODEL_INTEGRATION.md).
 
 ---
 
 ## Quick Start
 
-```bash
-# Install
-pip install ai-code-reviewer
-
-# Export credentials
-export ANTHROPIC_API_KEY=sk-ant-...
-export GITHUB_TOKEN=ghp_...
-
-# Review a GitHub PR
-ai-reviewer review-pr calimero-network/core 123
-
-# Review a local diff
-git diff main | ai-reviewer review --output markdown
+```powershell
+# From the repository root
+.venv\Scripts\python.exe -m ai_reviewer.demo `
+  --repo demo\sample_project `
+  --mode mock `
+  --agents 3 `
+  --output-dir demo\output
 ```
+
+This offline Demo needs no API key and never publishes to GitHub. It generates:
+
+- `demo/output/review-report.json` — machine-readable output
+- `demo/output/review-report.md` — team/shareable report
+- `demo/output/review-report.html` — visual report
+
+To call a real model, put the protocol and endpoint in `config.yaml`, and keep the
+secret in `.env` (which is ignored by Git):
+
+```yaml
+llm:
+  protocol: openai_chat_completions
+  base_url: https://api.deepseek.com
+  api_key_env: DEEPSEEK_API_KEY
+  model: deepseek-v4-flash
+  timeout_seconds: 120
+  max_tokens: 1600
+  retries: 2
+```
+
+```dotenv
+DEEPSEEK_API_KEY=your-api-key
+```
+
+```powershell
+.venv\Scripts\python.exe -m ai_reviewer.demo `
+  --repo demo\sample_project `
+  --mode api `
+  --config config.yaml
+```
+
+Use `openai_responses` with `https://api.openai.com/v1` for OpenAI Responses, or
+`anthropic_messages` with `https://api.anthropic.com` for Anthropic Messages. The
+configuration schema and all three examples are in `config.example.yaml`. Demo supports
+`--agents 1` through `--agents 5`; the default is 3, while `--agents 5` runs all five
+review perspectives.
 
 ---
 
 ## How It Works
 
-All LLM agents call Anthropic's Messages API directly via the official `anthropic` SDK. Security, performance, patterns, and logic agents run on `claude-sonnet-5` (security and logic with adaptive extended thinking on); the style agent uses `claude-haiku-4-5`. Repo exploration happens through Claude tool use (`read_file` / `glob` / `grep`) backed by the GitHub Contents API — no cloning, no extra infrastructure.
+The selected `llm.protocol` chooses the wire-format adapter. The review pipeline
+then remains the same: scan context, run specialized agents, aggregate findings,
+score the result, and write or publish the configured output.
 
 ```mermaid
 flowchart LR
-    PR["PR Diff"] --> Anthropic["Anthropic Messages API\n(claude-sonnet-5 / haiku-4-5)"]
-
-    subgraph Agents["Parallel Agent Execution"]
-        A1["Sonnet\n(Security)"]
-        A2["Sonnet\n(Performance)"]
-        A3["Sonnet\n(Patterns)"]
-        A4["Sonnet\n(Logic)"]
-        A5["Haiku\n(Style)"]
-    end
-
-    Anthropic --> Agents
-
-    Agents --> Agg["Review Aggregator\n• Cluster similar findings\n• Compute consensus scores\n• Rank by severity × agreement"]
-    Agg --> Delta["Delta Tracking\n• New / fixed / open findings\n• Convergence detection"]
-    Delta --> Out["Consolidated Review\n(GitHub / JSON / MD)"]
+    Input[Local project / GitHub PR] --> Scan[Scan and build context]
+    Scan --> Adapter{llm.protocol}
+    Adapter --> Chat[OpenAI Chat Completions]
+    Adapter --> Responses[OpenAI Responses]
+    Adapter --> Messages[Anthropic Messages]
+    Chat --> Agents[Parallel specialized agents]
+    Responses --> Agents
+    Messages --> Agents
+    Agents --> Agg[Aggregate consensus and score]
+    Agg --> Output[Local reports / GitHub review]
 ```
 
-For a detailed breakdown of the pipeline, scoring formulas, and convergence logic, see the **[Architecture Documentation](docs/ARCHITECTURE.md)**.
+DeepSeek and other OpenAI-compatible gateways use the Chat Completions branch;
+there is no vendor-specific DeepSeek implementation. The Demo and the full reviewer
+read the same unified `llm:` settings, while `.env` supplies secrets through
+`api_key_env`.
 
 ---
 
 ## Configuration
 
-Create `config.yaml`:
+The recommended configuration file is `config.yaml` (start from
+`config.example.yaml`). The important fields are:
 
-```yaml
-anthropic:
-  api_key: ${ANTHROPIC_API_KEY}
-  default_model: claude-sonnet-5
-  enable_prompt_caching: true
-  max_combined_context_tokens: 80000
+| Field | Meaning |
+| --- | --- |
+| `llm.protocol` | `openai_chat_completions`, `openai_responses`, or `anthropic_messages` |
+| `llm.base_url` | Provider/gateway base URL; the adapter adds the protocol endpoint |
+| `llm.api_key_env` | Name of the environment variable containing the key |
+| `llm.model` | Model identifier accepted by the selected endpoint |
+| `llm.timeout_seconds` | Per-request timeout |
+| `llm.max_tokens` | Demo output limit |
+| `llm.retries` | Demo retry count after transient timeouts |
 
-github:
-  token: ${GITHUB_TOKEN}  # or Classic PAT for thread resolution (see below)
-
-agents:
-  - name: security-reviewer
-    model: claude-sonnet-5
-    focus_areas: [security, architecture]
-
-  - name: performance-reviewer
-    model: claude-sonnet-5
-    focus_areas: [performance, logic]
-
-  - name: style-reviewer
-    model: claude-haiku-4-5
-    focus_areas: [style, readability]
-    allow_tool_use: false
-
-orchestrator:
-  timeout_seconds: 300
-  min_agents_required: 2
-
-# Documentation review (rule-based, no LLM cost)
-doc_review:
-  enabled: true
-  architecture_paths: ["architecture/", "docs/", "doc/"]
-  convention_files: ["AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md"]
-```
+`.env` is for secrets and local overrides; `config.yaml` is local and ignored by Git,
+while `config.example.yaml` is the checked-in template for shareable behavior and endpoint settings. A legacy `anthropic:` block and legacy
+`LLM_*`/`AI_REVIEWER_*` environment variables remain supported for compatibility,
+but new work should use the unified `llm:` block.
 
 ---
 

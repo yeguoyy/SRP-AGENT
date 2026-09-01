@@ -6,11 +6,22 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 
 # Single source of truth for the current Anthropic model generation.
 # Bump these two when a new model ships; every default below inherits from them.
 DEFAULT_SONNET_MODEL = "claude-sonnet-5"
 DEFAULT_HAIKU_MODEL = "claude-haiku-4-5-20251001"
+SUPPORTED_LLM_PROTOCOLS = {
+    "openai_chat_completions",
+    "openai_responses",
+    "anthropic_messages",
+}
+
+
+# Load the repository-local .env for both the CLI and the demo. Explicit shell
+# variables still win because python-dotenv does not override them by default.
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
 @dataclass
@@ -30,22 +41,35 @@ class AgentConfig:
 
 
 @dataclass
-class AnthropicApiConfig:
-    """Anthropic Messages API configuration."""
+class LLMConfig:
+    """Unified configuration shared by all supported LLM wire protocols."""
 
-    api_key: str
+    protocol: str = "anthropic_messages"
+    api_key: str = ""
+    api_key_env: str = "ANTHROPIC_API_KEY"
     base_url: str = "https://api.anthropic.com"
+    model: str = ""
     timeout_seconds: int = 300
+    # Used by the lightweight Demo adapters. The full Anthropic tool-use path
+    # continues to take the per-agent ``AgentConfig.max_tokens`` value.
+    max_tokens: int = 1600
     # Long non-streaming review calls occasionally have their connection dropped
     # by the network (httpx.ReadError -> APIConnectionError). These are transient
     # and retryable; 1 retry was too few (one of N parallel agents reliably
     # failed and the whole review posted "incomplete"). 3 rescues the vast majority.
     max_retries: int = 3
+
+    @property
+    def retries(self) -> int:
+        """Alias used by protocol adapters and YAML's concise ``retries`` key."""
+        return self.max_retries
+
     # Wall-clock budget for one agent's whole run_review call (all tool rounds and
     # in-call retries). Backstops the SDK retry x per-attempt-timeout product that
     # let a single dead streaming connection burn ~20 minutes.
     agent_review_deadline_seconds: int = 900
     default_model: str = DEFAULT_SONNET_MODEL
+    thinking: str | None = None
     enable_prompt_caching: bool = True
     max_combined_context_tokens: int = 80_000
     per_file_max_bytes: int = 512 * 1024
@@ -57,6 +81,15 @@ class AnthropicApiConfig:
     hunk_context_lines: int = 60
     # Aggregate cap on the concatenated project-conventions block.
     conventions_max_chars: int = 16_000
+
+
+@dataclass
+class AnthropicApiConfig(LLMConfig):
+    """Backward-compatible name for the legacy full-review configuration.
+
+    The object now also carries the selected protocol, so existing callers can
+    continue using ``config.anthropic`` while new code reads ``config.llm``.
+    """
 
 
 @dataclass
@@ -186,6 +219,7 @@ class Config:
     anthropic: AnthropicApiConfig | None
     github: GitHubConfig
     agents: list[AgentConfig]
+    llm: LLMConfig | None = None
     orchestrator: OrchestratorSettings = field(default_factory=OrchestratorSettings)
     aggregator: AggregatorSettings = field(default_factory=AggregatorSettings)
     output: OutputSettings = field(default_factory=OutputSettings)
@@ -241,32 +275,62 @@ def _expand_env_vars(obj: Any) -> Any:
 
 def _parse_config(raw: dict[str, Any]) -> Config:
     """Parse raw config dict into Config object."""
-    # Anthropic config — always constructed; falls back to env vars when YAML absent.
-    # AI_REVIEWER_* is the evaluation-friendly namespace. Keep the official
-    # ANTHROPIC_* names as fallbacks so existing CLI / Claude Code setups keep
-    # working and a single gateway can still be shared by both tools.
-    anthropic_raw = raw.get("anthropic", {})
-    anthropic = AnthropicApiConfig(
-        api_key=anthropic_raw.get("api_key")
-        or os.environ.get("AI_REVIEWER_API_KEY")
-        or os.environ.get("ANTHROPIC_API_KEY", ""),
-        base_url=anthropic_raw.get("base_url")
-        or os.environ.get("AI_REVIEWER_BASE_URL")
-        or os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
-        timeout_seconds=anthropic_raw.get("timeout_seconds", 300),
-        max_retries=anthropic_raw.get("max_retries", 3),
-        agent_review_deadline_seconds=anthropic_raw.get("agent_review_deadline_seconds", 900),
-        default_model=anthropic_raw.get("default_model")
+    # Unified LLM config. ``anthropic`` remains a compatibility view for the
+    # existing full-review code until all call sites use ``config.llm``.
+    llm_raw = raw.get("llm") or {}
+    legacy_raw = raw.get("anthropic") or {}
+    source = llm_raw if llm_raw else legacy_raw
+    protocol = str(source.get("protocol", "anthropic_messages")).strip().lower()
+    api_key_env = str(
+        source.get(
+            "api_key_env",
+            "ANTHROPIC_API_KEY" if protocol == "anthropic_messages" else "LLM_API_KEY",
+        )
+    )
+    api_key = source.get("api_key") or os.environ.get(api_key_env, "")
+    if not api_key:
+        api_key = (
+            os.environ.get("AI_REVIEWER_API_KEY")
+            or os.environ.get("ANTHROPIC_API_KEY", "")
+            if protocol == "anthropic_messages"
+            else os.environ.get("LLM_API_KEY", "")
+        )
+    default_base_url = (
+        "https://api.anthropic.com"
+        if protocol == "anthropic_messages"
+        else "https://api.openai.com/v1"
+    )
+    model = (
+        source.get("model")
+        or source.get("default_model")
         or os.environ.get("AI_REVIEWER_MODEL")
-        or os.environ.get("ANTHROPIC_MODEL", DEFAULT_SONNET_MODEL),
-        enable_prompt_caching=anthropic_raw.get("enable_prompt_caching", True),
-        max_combined_context_tokens=anthropic_raw.get("max_combined_context_tokens", 80_000),
-        per_file_max_bytes=anthropic_raw.get("per_file_max_bytes", 512 * 1024),
-        per_review_github_request_budget=anthropic_raw.get("per_review_github_request_budget", 200),
-        max_tool_result_bytes=anthropic_raw.get("max_tool_result_bytes", 16 * 1024),
-        full_file_max_lines=anthropic_raw.get("full_file_max_lines", 300),
-        hunk_context_lines=anthropic_raw.get("hunk_context_lines", 60),
-        conventions_max_chars=anthropic_raw.get("conventions_max_chars", 16_000),
+        or os.environ.get("LLM_MODEL")
+        or (os.environ.get("ANTHROPIC_MODEL") if protocol == "anthropic_messages" else "")
+        or DEFAULT_SONNET_MODEL
+    )
+    anthropic = AnthropicApiConfig(
+        protocol=protocol,
+        api_key=api_key,
+        api_key_env=api_key_env,
+        base_url=source.get("base_url")
+        or os.environ.get("AI_REVIEWER_BASE_URL")
+        or os.environ.get("LLM_BASE_URL")
+        or os.environ.get("ANTHROPIC_BASE_URL", default_base_url),
+        model=model,
+        timeout_seconds=source.get("timeout_seconds", 300),
+        max_tokens=source.get("max_tokens", 1600),
+        max_retries=source.get("retries", source.get("max_retries", 3)),
+        agent_review_deadline_seconds=source.get("agent_review_deadline_seconds", 900),
+        default_model=model,
+        thinking=source.get("thinking"),
+        enable_prompt_caching=source.get("enable_prompt_caching", True),
+        max_combined_context_tokens=source.get("max_combined_context_tokens", 80_000),
+        per_file_max_bytes=source.get("per_file_max_bytes", 512 * 1024),
+        per_review_github_request_budget=source.get("per_review_github_request_budget", 200),
+        max_tool_result_bytes=source.get("max_tool_result_bytes", 16 * 1024),
+        full_file_max_lines=source.get("full_file_max_lines", 300),
+        hunk_context_lines=source.get("hunk_context_lines", 60),
+        conventions_max_chars=source.get("conventions_max_chars", 16_000),
     )
 
     # GitHub config
@@ -283,11 +347,9 @@ def _parse_config(raw: dict[str, Any]) -> Config:
     agents = []
     for i, agent_raw in enumerate(raw.get("agents", [])):
         name = agent_raw.get("name")
-        model = agent_raw.get("model")
+        model = agent_raw.get("model") or model
         if not name:
             raise ValueError(f"Agent #{i} is missing required field 'name'")
-        if not model:
-            raise ValueError(f"Agent '{name}' is missing required field 'model'")
         agents.append(
             AgentConfig(
                 name=name,
@@ -306,8 +368,9 @@ def _parse_config(raw: dict[str, Any]) -> Config:
     # Default agents if none configured — follow anthropic.default_model so a
     # gateway-only setup (AI_REVIEWER_MODEL / ANTHROPIC_MODEL="some-model") does
     # not need an agents block just to override the hardcoded sonnet names.
-    # Names explicitly configured via the YAML agents block: their model wins
-    # over env overrides below.
+    # Names explicitly configured via the YAML agents block: their explicit
+    # model wins over env overrides below. If omitted, the shared llm.model
+    # has already been copied into the agent config above.
     yaml_agent_names = {agent.name for agent in agents}
 
     if not agents:
@@ -447,6 +510,7 @@ def _parse_config(raw: dict[str, Any]) -> Config:
         anthropic=anthropic,
         github=github,
         agents=agents,
+        llm=anthropic,
         orchestrator=orchestrator,
         aggregator=aggregator,
         output=output,
@@ -468,10 +532,14 @@ def validate_config(config: Config) -> list[str]:
     """
     errors = []
 
-    if not config.anthropic or not config.anthropic.api_key:
+    llm = config.llm or config.anthropic
+    if llm is None or not llm.api_key:
+        env_name = llm.api_key_env if llm else "LLM_API_KEY"
+        errors.append(f"Missing LLM API key (set {env_name} or llm.api_key)")
+    if llm is not None and llm.protocol not in SUPPORTED_LLM_PROTOCOLS:
         errors.append(
-            "Missing Anthropic API key (set AI_REVIEWER_API_KEY, ANTHROPIC_API_KEY, "
-            "or anthropic.api_key)"
+            f"Unsupported LLM protocol '{llm.protocol}' (choose one of: "
+            f"{', '.join(sorted(SUPPORTED_LLM_PROTOCOLS))})"
         )
 
     if not config.github.token:

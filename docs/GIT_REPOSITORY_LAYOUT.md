@@ -2,7 +2,7 @@
 
 ## 当前策略
 
-`D:\Code\SRP-AGENT` 是唯一的 Git 仓库根目录，统一管理三个保留项目和配套文档。
+本地目录 `D:\Code\SRP` 是唯一的 Git 仓库根目录，远程 GitHub 仓库名称为 `SRP-AGENT`。本地目录名和远程仓库名可以不同，不需要为了远程改名而重命名本地文件夹。
 
 以下目录原先有独立 Git 元数据：
 
@@ -17,10 +17,21 @@
 ## 提交前检查
 
 ```powershell
-cd D:\Code\SRP-AGENT
+cd D:\Code\SRP
 git status
 git status --ignored
+git diff --check
 git ls-files
 ```
 
 重点确认不提交：`.git.backup/`、`.venv/`、`__pycache__/`、`.env` 和密钥文件、下载的外部仓库和生成结果。
+
+建议提交前使用：
+
+```powershell
+git diff --stat
+git diff --cached --stat
+git diff --cached --check
+```
+
+确认暂存区内容无误后再执行 `git commit`；本次整理不自动执行 commit、push 或 pull。

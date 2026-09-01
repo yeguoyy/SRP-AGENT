@@ -153,7 +153,7 @@ def review_pr(
     force_review: bool,
     doc_check: bool | None,
 ) -> None:
-    """Review a GitHub pull request using Anthropic Claude agent(s).
+    """Review a GitHub pull request using the protocol selected in ``llm.protocol``.
 
     With --agents=1: Single comprehensive review
     With --agents=2: Security + Performance agents (cross-review on by default)
@@ -193,7 +193,7 @@ async def review_pr_async(
     force_review: bool = False,
     doc_check: bool | None = None,
 ) -> None:
-    """Async implementation of PR review using Anthropic Claude agents."""
+    """Async implementation of PR review using the configured LLM protocol."""
     # Auto-detect GitHub Actions environment - never allow APPROVE there
     is_github_actions = os.getenv("GITHUB_ACTIONS") == "true"
     allow_approve = not no_approve and not is_github_actions
@@ -214,8 +214,8 @@ async def review_pr_async(
 
     if not config.anthropic or not config.anthropic.api_key:
         console.print(
-            "[red]error:[/red] anthropic.api_key not configured "
-            "(set ANTHROPIC_API_KEY or anthropic.api_key in config.yaml)"
+            "[red]error:[/red] LLM API key not configured "
+            "(set the environment variable named by llm.api_key_env or llm.api_key in config.yaml)"
         )
         sys.exit(2)
     anthropic_cfg = config.anthropic
@@ -994,7 +994,8 @@ def config_show(config_path: str | None) -> None:
 
     # Other settings
     if config.anthropic:
-        console.print(f"\n[bold]Anthropic API:[/bold] {config.anthropic.base_url}")
+        console.print(f"\n[bold]LLM protocol:[/bold] {config.anthropic.protocol}")
+        console.print(f"[bold]LLM endpoint:[/bold] {config.anthropic.base_url}")
         console.print(f"[bold]Model:[/bold] {config.anthropic.default_model}")
         console.print(f"[bold]Timeout:[/bold] {config.anthropic.timeout_seconds}s")
 

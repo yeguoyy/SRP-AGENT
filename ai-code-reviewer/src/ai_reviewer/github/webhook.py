@@ -268,35 +268,39 @@ async def run_review(repo: str, pr_number: int) -> None:
     from ai_reviewer.github.formatter import GitHubFormatter
     from ai_reviewer.review import review_pr
 
-    anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
-    github_token = _resolve_github_token(repo)
+    try:
+        webhook_config = load_config()
+    except Exception as e:
+        logger.warning("Failed to load config file, using environment defaults: %s", e)
+        webhook_config = None
+
+    configured_llm = (webhook_config.llm or webhook_config.anthropic) if webhook_config else None
+    if configured_llm is not None:
+        anthropic_cfg = configured_llm
+        anthropic_api_key = configured_llm.api_key
+    else:
+        anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
+        anthropic_cfg = AnthropicApiConfig(
+            api_key=anthropic_api_key or "",
+            base_url=os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
+            timeout_seconds=_get_env_int("ANTHROPIC_TIMEOUT", 600),
+        )
+
+    github_token = (webhook_config.github.token if webhook_config else "") or _resolve_github_token(repo)
 
     # Raise (not return) so a missing credential propagates to the Cloud Tasks
     # worker's retry/dead-letter path — a silent return would let /process-review
     # mark the job "ok" and drop it, recreating the exact total-silence outage
     # this PR fixes.
     if not anthropic_api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY not set")
+        raise RuntimeError(f"{anthropic_cfg.api_key_env} not set")
     if not github_token:
         raise RuntimeError("GITHUB_TOKEN not set")
 
-    anthropic_timeout = _get_env_int("ANTHROPIC_TIMEOUT", 600)
     num_agents = _get_env_int("NUM_AGENTS", 3)
     min_agreement = _get_env_float("MIN_VALIDATION_AGREEMENT", 2 / 3)
 
-    anthropic_cfg = AnthropicApiConfig(
-        api_key=anthropic_api_key,
-        base_url=os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
-        timeout_seconds=anthropic_timeout,
-    )
-
     enable_cross_review = os.environ.get("ENABLE_CROSS_REVIEW", "true").lower() != "false"
-
-    try:
-        webhook_config = load_config()
-    except Exception as e:
-        logger.warning("Failed to load config file, using defaults: %s", e)
-        webhook_config = None
 
     gh = GitHubClient(github_token)
     pr = gh.get_pull_request(repo, pr_number)

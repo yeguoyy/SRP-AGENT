@@ -34,6 +34,7 @@ from ai_reviewer.agents.anthropic_client import INCOMPLETE_SUMMARY_MARKERS, Anth
 from ai_reviewer.agents.base import ReviewAgent
 from ai_reviewer.agents.patterns import PatternsAgent, StyleAgent
 from ai_reviewer.agents.performance import LogicAgent, PerformanceAgent
+from ai_reviewer.agents.protocol_client import ReviewClient, create_review_client
 from ai_reviewer.agents.security import AuthenticationAgent, SecurityAgent
 from ai_reviewer.config import AnthropicApiConfig
 from ai_reviewer.context.builder import build_pr_map_block, build_system_blocks, build_user_blocks
@@ -49,6 +50,18 @@ from ai_reviewer.tools.repo_tools import ToolRegistry
 from ai_reviewer.validation.fix_check import validate_finding_fixes
 
 logger = logging.getLogger(__name__)
+
+
+def _create_review_client(config: AnthropicApiConfig) -> ReviewClient:
+    """Create the configured full-review client with legacy patch compatibility.
+
+    The Anthropic client remains a module-level symbol because older integrations
+    and tests patch ``ai_reviewer.review.AnthropicClient`` directly. OpenAI
+    protocol clients continue to be selected by the shared factory.
+    """
+    if config.protocol == "anthropic_messages":
+        return AnthropicClient(config)
+    return create_review_client(config)
 
 
 def _detect_pr_type(changed_paths: list[str]) -> str:
@@ -1151,7 +1164,7 @@ async def _run_agent_safe(
 
 
 async def _run_single_cross_agent(
-    client: AnthropicClient,
+    client: ReviewClient,
     cross_prompt: str,
     agent_name: str,
     on_status: Callable[..., Any] | None,
@@ -1183,7 +1196,7 @@ async def _run_single_cross_agent(
 
 async def run_cross_review_round(
     *,
-    client: AnthropicClient,
+    client: ReviewClient,
     review: ConsolidatedReview,
     context: ReviewContext,
     diff: str,
@@ -1381,7 +1394,7 @@ def _raw_to_review_finding(raw: dict[str, Any]) -> ReviewFinding | None:
 
 
 async def _run_cross_shard_pass(
-    client: AnthropicClient,
+    client: ReviewClient,
     pr_map: str,
     findings: list[ReviewFinding],
 ) -> list[ReviewFinding]:
@@ -1431,7 +1444,7 @@ async def _run_agent_sharded(
     cls: type[ReviewAgent],
     agent_name: str,
     agent_index: int,
-    client: AnthropicClient,
+    client: ReviewClient,
     system_blocks: list[dict[str, Any]],
     shards: list[Shard],
     pr_map: str,
@@ -1934,7 +1947,7 @@ async def _review_from_inputs(
         github_budget=anthropic_cfg.per_review_github_request_budget,
     )
 
-    async with AnthropicClient(anthropic_cfg) as client:
+    async with _create_review_client(anthropic_cfg) as client:
         system_blocks, user_blocks, trimmed_paths = await _prepare_shared_context(
             session=session,
             gh=gh,
@@ -2089,7 +2102,7 @@ async def _review_from_inputs(
             logger.info("Skipping cross-review: no round-1 agents succeeded")
         else:
             logger.info("Running cross-review round (validate and rank findings)...")
-            async with AnthropicClient(anthropic_cfg) as cross_client:
+            async with _create_review_client(anthropic_cfg) as cross_client:
                 cross_results = await run_cross_review_round(
                     client=cross_client,
                     session=session,

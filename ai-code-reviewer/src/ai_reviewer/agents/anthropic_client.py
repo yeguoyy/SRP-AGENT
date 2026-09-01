@@ -110,21 +110,21 @@ def _sampling_params(
     Sonnet 5 (and Opus 4.7+) treat an *omitted* `thinking` field as adaptive-ON,
     so thinking-off agents must send an explicit {"type": "disabled"} or thinking
     silently eats the max_tokens budget. Fable/Mythos reject explicit "disabled"
-    (thinking is always on there) — omit the field for those instead. Newer
-    anthropic SDKs removed `temperature` from the generated method signature, so
-    keep it in `extra_body`; this remains compatible with older models and with
-    Anthropic-compatible gateways.
+    (thinking is always on there) — omit the field for those instead. Pass
+    temperature as a normal Messages API parameter when the target model
+    supports sampling controls; models that reject sampling parameters receive
+    neither temperature nor the other sampling controls.
     """
     params: dict[str, Any] = {}
     if enable_thinking:
         params["thinking"] = {"type": "adaptive"}
         if _accepts_temperature(model):
-            params["extra_body"] = {"temperature": 1.0}  # API requires temp=1 alongside thinking
+            params["temperature"] = 1.0  # API requires temp=1 alongside thinking
     else:
         if model not in _ALWAYS_THINKING_MODELS:
             params["thinking"] = {"type": "disabled"}
         if temperature is not None and _accepts_temperature(model):
-            params["extra_body"] = {"temperature": temperature}
+            params["temperature"] = temperature
     return params
 
 

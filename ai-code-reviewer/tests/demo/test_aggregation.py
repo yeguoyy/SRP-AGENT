@@ -28,3 +28,13 @@ def test_score_penalizes_critical_security_finding():
     result = score([_finding("安全评审 Agent")])
     assert result.dimensions["security"] < 100
     assert 0 < result.overall < 100
+
+
+def test_score_uses_selected_agent_count():
+    from ai_reviewer.demo.aggregation import score
+
+    finding = _finding("安全评审 Agent")
+    one_agent = score([finding], agent_count=1)
+    five_agents = score([finding], agent_count=5)
+
+    assert one_agent.overall < five_agents.overall

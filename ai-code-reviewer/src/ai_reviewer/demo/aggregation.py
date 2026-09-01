@@ -102,13 +102,13 @@ def consolidate(findings: list[Finding], agent_count: int) -> list[Finding]:
     )
 
 
-def score(findings: list[Finding]) -> ScoreBreakdown:
+def score(findings: list[Finding], agent_count: int = 3) -> ScoreBreakdown:
     penalties: dict[str, float] = defaultdict(float)
     for finding in findings:
         dimension = finding.category.value
         if dimension not in DIMENSION_WEIGHTS:
             dimension = "quality"
-        consensus_multiplier = 0.75 + 0.25 * (len(finding.source_agents) / 3)
+        consensus_multiplier = 0.75 + 0.25 * (len(finding.source_agents) / max(agent_count, 1))
         penalties[dimension] += PENALTIES[finding.severity] * consensus_multiplier
 
     dimensions = {
@@ -136,7 +136,7 @@ def build_report(
 ) -> DemoReport:
     all_findings = [finding for result in agent_results for finding in result.findings]
     consolidated = consolidate(all_findings, len(agent_results))
-    score_breakdown = score(consolidated)
+    score_breakdown = score(consolidated, len(agent_results))
     critical = sum(item.severity == Severity.CRITICAL for item in consolidated)
     warning = sum(item.severity == Severity.WARNING for item in consolidated)
     summary = (

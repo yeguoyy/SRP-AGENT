@@ -4,22 +4,48 @@
 version: 1
 
 # ============================================================================
-# ANTHROPIC API — unified LLM gateway via the official Messages API
+# UNIFIED LLM PROTOCOL CONFIGURATION
 # ============================================================================
-anthropic:
-  api_key: ${ANTHROPIC_API_KEY}
-  # base_url: https://api.anthropic.com   # default
-  default_model: claude-sonnet-5
-  timeout_seconds: 600  # long review generations; below this the connection can be dropped
-  max_retries: 3  # transient APIConnectionError/ReadError on long calls are retryable
-  agent_review_deadline_seconds: 900  # wall-clock budget per agent review; backstops retry x timeout hangs
+# The protocol selects the wire format, not the vendor. DeepSeek can use either
+# OpenAI-compatible protocol; it does not need a separate DeepSeek client.
+# Supported values:
+#   openai_chat_completions
+#   openai_responses
+#   anthropic_messages
+llm:
+  protocol: openai_chat_completions
+  base_url: https://api.deepseek.com
+  api_key_env: DEEPSEEK_API_KEY
+  model: deepseek-v4-flash
+  timeout_seconds: 120
+  max_tokens: 1600
+  retries: 2
+
+  # OpenAI example:
+  # protocol: openai_responses
+  # base_url: https://api.openai.com/v1
+  # api_key_env: OPENAI_API_KEY
+  # model: gpt-4.1
+  #
+  # Anthropic example:
+  # protocol: anthropic_messages
+  # base_url: https://api.anthropic.com
+  # api_key_env: ANTHROPIC_API_KEY
+  # model: claude-sonnet-5
+
+  # Full PR review settings shared by the selected protocol adapter and
+  # the shared context builder; Demo uses max_tokens/retries above.
+  agent_review_deadline_seconds: 900
   enable_prompt_caching: true
   max_combined_context_tokens: 80000
   per_file_max_bytes: 524288
   per_review_github_request_budget: 200
-  full_file_max_lines: 300      # changed files longer than this are sent as hunk excerpts; agents pull the rest via read_file
-  hunk_context_lines: 60        # lines of context kept around each diff hunk in excerpt mode
-  conventions_max_chars: 16000  # aggregate cap on the project-conventions block
+  full_file_max_lines: 300
+  hunk_context_lines: 60
+  conventions_max_chars: 16000
+
+# Compatibility: projects using the old ``anthropic:`` block are still accepted.
+# New configurations should use ``llm:`` above.
 
 # ============================================================================
 # GITHUB INTEGRATION
@@ -38,8 +64,7 @@ github:
 # ============================================================================
 agents:
   - name: security-reviewer
-    model: claude-sonnet-5
-    focus_areas:
+    focus_areas:  #空即为默认模型
       - security
       - authentication
       - data_validation
@@ -54,7 +79,6 @@ agents:
     max_tool_calls: 20
 
   - name: patterns-reviewer
-    model: claude-sonnet-5
     focus_areas:
       - consistency
       - patterns
@@ -68,7 +92,6 @@ agents:
     max_tool_calls: 8
 
   - name: logic-reviewer
-    model: claude-sonnet-5
     focus_areas:
       - logic
       - edge_cases
@@ -82,7 +105,6 @@ agents:
     max_tool_calls: 20
 
   - name: performance-reviewer
-    model: claude-sonnet-5
     focus_areas:
       - performance
       - complexity
@@ -95,7 +117,6 @@ agents:
     max_tool_calls: 8
 
   - name: style-reviewer
-    model: claude-haiku-4-5-20251001
     focus_areas:
       - style
       - documentation

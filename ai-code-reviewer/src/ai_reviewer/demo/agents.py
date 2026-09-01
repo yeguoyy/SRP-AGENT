@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import replace
 
-from ai_reviewer.demo.llm import LLMError, OpenAICompatibleClient
+from ai_reviewer.demo.llm import LLMError, ReviewClient
 from ai_reviewer.demo.models import AgentResult, Category, Finding, ProjectSnapshot, Severity
 
 
@@ -19,7 +20,8 @@ class DemoAgent:
         rule_findings: list[Finding],
         *,
         mode: str = "mock",
-        client: OpenAICompatibleClient | None = None,
+        client: ReviewClient | None = None,
+        progress_callback: Callable[[str, dict[str, object]], None] | None = None,
     ) -> AgentResult:
         started = time.perf_counter()
         try:
@@ -30,6 +32,18 @@ class DemoAgent:
                     agent_name=self.name,
                     focus=self.focus,
                     snapshot=snapshot,
+                    retry_callback=(
+                        lambda retry_number, total_attempts, retry_agent: progress_callback(
+                            "agent_retry",
+                            {
+                                "agent_name": retry_agent,
+                                "retry_number": retry_number,
+                                "total_attempts": total_attempts,
+                            },
+                        )
+                        if progress_callback is not None
+                        else None
+                    ),
                 )
                 return AgentResult(
                     agent_name=self.name,
@@ -131,6 +145,43 @@ class ArchitectureAgent(DemoAgent):
         return [_for_agent(finding, self.name) for finding in selected]
 
 
+class PerformanceAgent(DemoAgent):
+    name = "性能评审 Agent"
+    focus = "性能瓶颈、算法复杂度、资源使用和可扩展性"
+
+    def _mock_findings(self, snapshot: ProjectSnapshot, rule_findings: list[Finding]) -> list[Finding]:
+        selected = [
+            finding
+            for finding in rule_findings
+            if finding.category in {Category.COMPLEXITY, Category.QUALITY}
+            and (finding.category == Category.COMPLEXITY or "长" in finding.title)
+        ]
+        return [_for_agent(finding, self.name) for finding in selected]
+
+
+class StyleAgent(DemoAgent):
+    name = "风格与文档 Agent"
+    focus = "代码风格、可读性、文档完整性和测试可维护性"
+
+    def _mock_findings(self, snapshot: ProjectSnapshot, rule_findings: list[Finding]) -> list[Finding]:
+        selected = [
+            finding
+            for finding in rule_findings
+            if finding.category in {Category.STYLE, Category.TESTING}
+            or (finding.category == Category.QUALITY and "说明" in finding.title)
+        ]
+        return [_for_agent(finding, self.name) for finding in selected]
+
+
+_DEMO_AGENT_TYPES = (
+    SecurityAgent,
+    QualityAgent,
+    ArchitectureAgent,
+    PerformanceAgent,
+    StyleAgent,
+)
+
+
 def _for_agent(finding: Finding, agent_name: str, *, soften_sql: bool = False) -> Finding:
     title = finding.title
     description = finding.description
@@ -140,6 +191,9 @@ def _for_agent(finding: Finding, agent_name: str, *, soften_sql: bool = False) -
     return replace(finding, title=title, description=description, source_agents=[agent_name], id="")
 
 
-def build_agents() -> list[DemoAgent]:
-    return [SecurityAgent(), QualityAgent(), ArchitectureAgent()]
+def build_agents(agent_count: int = 3) -> list[DemoAgent]:
+    """Build the first ``agent_count`` Demo roles in the standard five-role order."""
+    if not 1 <= agent_count <= len(_DEMO_AGENT_TYPES):
+        raise ValueError(f"Demo Agent 数量必须在 1 到 {len(_DEMO_AGENT_TYPES)} 之间")
+    return [agent_type() for agent_type in _DEMO_AGENT_TYPES[:agent_count]]
 

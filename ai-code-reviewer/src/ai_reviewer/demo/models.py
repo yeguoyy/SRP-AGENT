@@ -140,6 +140,48 @@ def enum_value(value: Any) -> Any:
     return value
 
 
+def _parse_confidence(value: Any, default: float = 0.65) -> float:
+    """Normalize numeric or qualitative confidence values returned by a model.
+
+    The prompt asks for a number in the 0..1 range, but compatible models may
+    still return labels such as ``"high"`` or percentages. Keep the adapter
+    tolerant so one malformed field does not discard the whole API response.
+    """
+    if value is None or value == "":
+        return default
+
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        qualitative = {
+            "high": 0.9,
+            "高": 0.9,
+            "较高": 0.8,
+            "medium": 0.65,
+            "中": 0.65,
+            "中等": 0.65,
+            "low": 0.35,
+            "低": 0.35,
+            "较低": 0.4,
+        }
+        if normalized in qualitative:
+            return qualitative[normalized]
+        if normalized.endswith("%"):
+            try:
+                return max(0.0, min(1.0, float(normalized[:-1]) / 100))
+            except ValueError:
+                return default
+
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+
+    # Be forgiving if a model returns a percentage such as 85 instead of 0.85.
+    if 1 < parsed <= 100:
+        parsed /= 100
+    return max(0.0, min(1.0, parsed))
+
+
 def finding_from_dict(data: dict[str, Any], agent_name: str) -> Finding:
     """Safely normalize a JSON finding returned by a model."""
     severity = str(data.get("severity", Severity.SUGGESTION.value)).lower()
@@ -163,8 +205,7 @@ def finding_from_dict(data: dict[str, Any], agent_name: str) -> Finding:
         recommendation=str(
             data.get("recommendation", data.get("suggested_fix", "请结合上下文进行人工确认。"))
         ),
-        confidence=float(data.get("confidence", 0.65) or 0.65),
+        confidence=_parse_confidence(data.get("confidence", 0.65)),
         source_agents=[agent_name],
     )
     return finding
-

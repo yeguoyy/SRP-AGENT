@@ -78,7 +78,11 @@ def _remote_slug(path: Path) -> str | None:
     )
     if proc.returncode != 0:
         return None
-    match = _REMOTE_SLUG.search(proc.stdout.strip())
+    # Git may print a local Windows remote with backslashes. Normalize path
+    # separators before extracting the final ``owner/repo`` components so the
+    # same clone-discovery logic works for local test fixtures and file remotes.
+    remote = proc.stdout.strip().replace("\\", "/")
+    match = _REMOTE_SLUG.search(remote)
     return match.group(1) if match else None
 
 
