@@ -5,6 +5,7 @@
 > 日期：2026 年 9 月 1 日
 >
 > 当前主项目：`D:\Code\SRP-AGENT\ai-code-reviewer`
+> 模型接入详见：`D:\Code\SRP\docs\MODEL_INTEGRATION.md`
 
 ---
 

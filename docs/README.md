@@ -6,6 +6,7 @@
 - `../ai-code-reviewer/docs/TEAM_WORK_REPORT.md`：队内阶段性工作报告。
 - `../ai-code-reviewer/DEMO_GUIDE.md`：Demo 使用指南。
 - `../ai-code-reviewer/docs/DEMO_ARCHITECTURE.md`：Demo 架构说明。
+- `MODEL_INTEGRATION.md`：Demo、ai-code-reviewer 主程序和 AACR-Bench 的模型接入说明。
 
 ## 参考资料
 

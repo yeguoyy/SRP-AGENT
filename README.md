@@ -20,7 +20,7 @@ SRP-AGENT
 ## 快速运行 Demo
 
 ```powershell
-cd D:\Code\SRP-AGENT\ai-code-reviewer
+cd D:\Code\SRP\ai-code-reviewer
 .\.venv\Scripts\python.exe -m ai_reviewer.demo `
   --repo demo\sample_project `
   --mode mock `
@@ -31,7 +31,7 @@ cd D:\Code\SRP-AGENT\ai-code-reviewer
 也可以使用一键脚本：
 
 ```powershell
-cd D:\Code\SRP-AGENT\ai-code-reviewer
+cd D:\Code\SRP\ai-code-reviewer
 .\run_demo.ps1 -Repo .\demo\sample_project -Mode mock
 ```
 
@@ -40,6 +40,7 @@ cd D:\Code\SRP-AGENT\ai-code-reviewer
 - `ai-code-reviewer/DEMO_GUIDE.md`
 - `ai-code-reviewer/docs/DEMO_ARCHITECTURE.md`
 - `ai-code-reviewer/docs/TEAM_WORK_REPORT.md`
+- `docs/MODEL_INTEGRATION.md`：模型接入、协议区别、AACR 配置和测试步骤。
 
 ## AACR-Bench 评测
 

@@ -34,6 +34,8 @@ $env:LLM_MODEL="your-model"
 
 API 模式请求失败时，系统会自动回退到离线检测，不会让演示直接崩溃。
 
+模型接入的完整说明（包括 OpenAI-compatible 与 Anthropic Messages API 的区别、AACR-Bench 配置和排错方法）见：`D:\Code\SRP\docs\MODEL_INTEGRATION.md`。
+
 ## 现场演示建议
 
 1. 先展示 `demo/sample_project` 中故意植入的硬编码密钥、动态执行、SQL 拼接和复杂业务函数。
