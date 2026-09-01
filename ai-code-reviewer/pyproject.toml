@@ -1,0 +1,140 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-code-reviewer"
+version = "0.1.1"
+description = "Multi-agent code review system that orchestrates multiple LLMs"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    { name = "Calimero Network", email = "dev@calimero.network" }
+]
+keywords = ["code-review", "llm", "ai", "github", "multi-agent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+dependencies = [
+    "anthropic>=0.40.0",
+    "PyGithub>=2.1.0",
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "click>=8.1.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.1.0",
+    "httpx>=0.26.0",
+    "pyyaml>=6.0.0",
+    "rich>=13.7.0",
+    "tenacity>=8.2.0",
+    "PyJWT>=2.8.0",
+    "cryptography>=50.0.0",
+]
+
+[project.optional-dependencies]
+# Optional: only needed to run reviews as durable Cloud Tasks jobs (queue mode).
+# The Actions/CLI path stays lean and never installs this.
+gcp = ["google-cloud-tasks>=2"]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    # Exact pins: both gate CI, and a floating formatter or type checker turns an
+    # upstream release into a failing build on a branch that changed nothing.
+    "ruff==0.16.3",
+    "mypy==2.3.1",
+    "pre-commit>=3.6.0",
+    "types-PyYAML>=6.0.0",
+]
+
+[project.scripts]
+ai-reviewer = "ai_reviewer.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/calimero-network/ai-code-reviewer"
+Documentation = "https://github.com/calimero-network/ai-code-reviewer#readme"
+Repository = "https://github.com/calimero-network/ai-code-reviewer"
+Issues = "https://github.com/calimero-network/ai-code-reviewer/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_reviewer"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+# Docs are prose. Recent ruff formats Python inside Markdown code blocks, which
+# collapses examples written expanded on purpose to illustrate a point.
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+    "TID",    # flake8-tidy-imports
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+    "ARG002", # unused method argument - often kept for API compatibility
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ai_reviewer"]
+
+# Architecture invariant I1: the LLM SDK may be imported only by
+# agents/anthropic_client.py (which carries an inline `# noqa: TID251` on its
+# import line); everything else must go through AnthropicClient.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"anthropic".msg = "Import the SDK only in agents/anthropic_client.py; use AnthropicClient elsewhere."
+# Preventive: no openai usage today; keep it banned so I1 holds if a second
+# provider is ever introduced.
+"openai".msg = "No direct LLM SDKs; route LLM access through AnthropicClient."
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_ignores = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "requests.*",
+    "jwt.*",
+    "yaml.*",
+    "github.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-v --cov=ai_reviewer --cov-report=term-missing -m 'not integration'"
+markers = [
+    "integration: opt-in end-to-end tests requiring live API keys (run with `pytest -m integration`)",
+]
+
+[tool.coverage.run]
+source = ["src/ai_reviewer"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

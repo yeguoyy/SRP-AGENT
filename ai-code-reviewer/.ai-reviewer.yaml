@@ -1,0 +1,143 @@
+# AI Code Reviewer Configuration for this Repository
+# This file configures how AI Code Reviewer reviews its own code
+
+version: 1
+
+# Inherit default settings
+inherit_from: default
+
+# Anthropic Messages API — unified LLM gateway
+anthropic:
+  api_key: ${ANTHROPIC_API_KEY}
+  default_model: claude-sonnet-5
+  timeout_seconds: 300
+  max_retries: 3
+  enable_prompt_caching: true
+  max_combined_context_tokens: 80000
+  per_file_max_bytes: 524288
+  per_review_github_request_budget: 200
+
+# Agent customization for self-review
+agents:
+  - name: security-reviewer
+    model: claude-sonnet-5
+    focus_areas: [security, authentication]
+    thinking_enabled: true
+    max_tokens: 32000
+    allow_tool_use: true
+    temperature: 0.2
+    custom_prompt_append: |
+      This is a Python codebase that handles API keys and GitHub tokens.
+      Pay special attention to:
+      - Credentials not being logged or exposed
+      - Webhook signature validation
+      - Rate limiting and abuse prevention
+
+  - name: patterns-reviewer
+    model: claude-sonnet-5
+    focus_areas: [architecture, patterns]
+    thinking_enabled: false
+    max_tokens: 8192
+    allow_tool_use: true
+    temperature: 0.2
+    custom_prompt_append: |
+      This codebase follows these key patterns:
+      - All LLM access via AnthropicClient (never direct provider SDKs elsewhere)
+      - Agents are stateless and run independently
+      - Async throughout for I/O operations
+      - Dataclasses for all data structures
+
+      Flag violations of these patterns as architectural issues.
+      Reference .ai/rules/ for detailed module conventions.
+
+  - name: logic-reviewer
+    model: claude-sonnet-5
+    focus_areas: [logic, edge_cases, error_handling]
+    thinking_enabled: true
+    max_tokens: 32000
+    allow_tool_use: true
+    temperature: 0.2
+
+  - name: performance-reviewer
+    model: claude-sonnet-5
+    focus_areas: [performance, complexity, resource_management]
+    thinking_enabled: false
+    max_tokens: 8192
+    allow_tool_use: true
+    temperature: 0.3
+
+  - name: style-reviewer
+    model: claude-haiku-4-5-20251001
+    focus_areas: [style, documentation, readability]
+    thinking_enabled: false
+    allow_tool_use: false
+    temperature: 0.3
+
+# Files to ignore in reviews
+ignore:
+  - "**/__pycache__/**"
+  - "**/*.pyc"
+  - ".git/**"
+  - ".ruff_cache/**"
+  - "**/.mypy_cache/**"
+  - "**/htmlcov/**"
+  - "dist/**"
+  - "*.egg-info/**"
+
+# Review policy
+review_policy:
+  auto_approve_if_no_findings: false
+  block_on_critical: true
+  require_human_review_for: [security]
+  secret_scan_exclude:
+    - "tests/test_security_scanner.py"
+
+# Documentation sync rules
+documentation:
+  enabled: true
+  check_files:
+    - README.md
+    - docs/ARCHITECTURE.md
+    - .ai/rules/*.md
+    - .ai/context.md
+    - config.example.yaml
+
+  source_to_docs_mapping:
+    "src/ai_reviewer/agents/**":
+      - .ai/rules/agents.md
+      - .ai/context.md
+    "src/ai_reviewer/orchestrator/**":
+      - .ai/rules/orchestrator.md
+      - docs/ARCHITECTURE.md
+    "src/ai_reviewer/github/**":
+      - .ai/rules/github.md
+      - README.md
+    "src/ai_reviewer/models/**":
+      - .ai/rules/models.md
+      - .ai/context.md
+    "src/ai_reviewer/config.py":
+      - config.example.yaml
+      - README.md
+    "src/ai_reviewer/cli.py":
+      - README.md
+
+# AI-powered doc draft generation — enabled for dogfooding
+doc_generation:
+  enabled: true
+  model: claude-haiku-4-5-20251001
+  max_files: 5
+
+# Custom rules for this repo
+custom_rules:
+  # Enforce async patterns
+  - name: no-blocking-io
+    description: "All I/O operations must be async"
+    pattern: "requests\\.(get|post|put|delete)"
+    severity: warning
+    message: "Use httpx async client instead of blocking requests"
+
+  # Enforce type hints
+  - name: require-type-hints
+    description: "Public functions must have type hints"
+    check: "missing_type_hints_on_public_functions"
+    severity: suggestion

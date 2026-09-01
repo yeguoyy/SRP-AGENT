@@ -1,0 +1,39 @@
+name: Integration Tests
+
+# Live-API integration tests (real Anthropic calls), excluded from normal CI by
+# pyproject's `addopts = -m 'not integration'`; this workflow opts them in.
+#
+# Dispatch only: each run spends real credit, and an exhausted balance fails the
+# job on diffs that never touched API code, which reads as a broken branch.
+
+on:
+  workflow_dispatch:
+
+# One paid run at a time.
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run integration tests (live API)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # -o addopts="" drops the repo default (`-m 'not integration'` + coverage);
+        # -m integration then selects only the opt-in live tests.
+        run: pytest tests/integration -m integration -o addopts="" -v

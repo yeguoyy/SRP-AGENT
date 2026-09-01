@@ -1,0 +1,6 @@
+# SRP competition demo configuration (copy values to environment variables before API mode)
+mode: mock
+llm:
+  base_url: "https://your-openai-compatible-endpoint/v1"
+  api_key: "replace-me"
+  model: "replace-me"

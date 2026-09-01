@@ -1,0 +1,196 @@
+# DEPRECATED: This standalone workflow is superseded by the --doc-check flag
+# in `ai-reviewer review-pr`. Repos using the full AI review pipeline no longer
+# need this workflow — doc checking runs automatically as part of review-pr.
+# This file is kept as a lightweight fallback for repos that only want
+# documentation checking without the full AI review.
+
+name: Documentation Bot
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - 'src/**'
+      - 'config.example.yaml'
+      - 'pyproject.toml'
+
+# Permission: pull-requests: write is required to post documentation review comments.
+# Security: Fork PRs are excluded (line 27) to prevent untrusted code from getting write access.
+# Content: Only file paths are processed, sanitized via allowlist before use.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  doc-check:
+    name: Check Documentation Sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    # Serialise runs per PR; don't cancel so the latest push always completes
+    concurrency:
+      group: doc-bot-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+
+    # Don't run on forks to avoid security issues with write permissions
+    if: ${{ github.event.pull_request.head.repo.fork == false }}
+    
+    steps:
+      - name: Checkout code
+        # Pinned to v4.1.7 - https://github.com/actions/checkout/releases/tag/v4.1.7
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+        with:
+          # Fetch enough history for merge scenarios, rebases, and long-running PRs
+          fetch-depth: 100
+      
+      - name: Guard against leaked FIND/REPLACE markers in docs
+        # Fails if the doc-update pipeline ever committed raw patch delimiters
+        # into documentation content (see calimero-network/ai-code-reviewer PRs #92/#108/#110).
+        run: |
+          set -o pipefail
+          PATHS=""
+          for p in .ai README.md docs architecture; do
+            [ -e "$p" ] && PATHS="$PATHS $p"
+          done
+          if [ -z "$PATHS" ]; then
+            echo "No documentation paths present; nothing to scan."
+            exit 0
+          fi
+          # -F fixed strings, -w not used (tokens contain punctuation). Any hit fails.
+          if grep -RnF -e '<<<FIND' -e 'FIND>>>' -e '<<<REPLACE' -e 'REPLACE>>>' $PATHS; then
+            echo "::error::Leaked FIND/REPLACE patch marker found in documentation content."
+            exit 1
+          fi
+          echo "No leaked FIND/REPLACE markers in docs."
+
+      - name: Fetch base branch for comparison
+        env:
+          # Pass through env var to avoid shell interpolation issues
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch origin "$BASE_REF" --depth=100
+      
+      - name: Get changed files
+        id: changed-files
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -o pipefail
+          
+          # Use native git to get changed files (avoids third-party action supply chain risk)
+          # Get the merge base to handle rebases correctly
+          USE_TWO_DOT=false
+          if ! MERGE_BASE=$(git merge-base HEAD "origin/$BASE_REF" 2>&1); then
+            echo "::warning::git merge-base failed: $MERGE_BASE"
+            # Fallback: resolve branch to commit SHA explicitly
+            if ! MERGE_BASE=$(git rev-parse "origin/$BASE_REF" 2>&1); then
+              echo "::error::Failed to resolve base ref: $MERGE_BASE"
+              exit 1
+            fi
+            # When using rev-parse fallback, use two-dot diff (branch tip, not merge-base)
+            USE_TWO_DOT=true
+            echo "::notice::Using two-dot diff with branch tip fallback"
+          fi
+          
+          echo "Using base commit: $MERGE_BASE (two-dot: $USE_TWO_DOT)"
+          
+          # Get changed files matching our patterns
+          # Use two-dot (..) for branch tip comparison, three-dot (...) for merge-base
+          if [ "$USE_TWO_DOT" = "true" ]; then
+            DIFF_SPEC="$MERGE_BASE..HEAD"
+          else
+            DIFF_SPEC="$MERGE_BASE...HEAD"
+          fi
+          
+          if ! CHANGED=$(git diff --name-only "$DIFF_SPEC" -- \
+            'src/**' \
+            'config.example.yaml' \
+            'pyproject.toml' 2>&1); then
+            echo "::error::git diff failed: $CHANGED"
+            echo "diff_failed=true" >> "$GITHUB_OUTPUT"
+            # Don't silently continue - surface the error
+            exit 1
+          fi
+          
+          # Check if any files changed
+          if [ -n "$CHANGED" ]; then
+            echo "any_changed=true" >> "$GITHUB_OUTPUT"
+            # Store as newline-separated for safer parsing
+            {
+              echo "CHANGED_FILES<<EOF"
+              echo "$CHANGED"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "any_changed=false" >> "$GITHUB_OUTPUT"
+            echo "CHANGED_FILES=" >> "$GITHUB_OUTPUT"
+          fi
+          
+          # Log for debugging
+          echo "Changed files:"
+          echo "$CHANGED"
+      
+      - name: Setup Python
+        if: steps.changed-files.outputs.any_changed == 'true'
+        # Pinned to v5.1.0 - https://github.com/actions/setup-python/releases/tag/v5.1.0
+        uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f
+        with:
+          python-version: '3.11'
+      
+      - name: Analyze documentation needs
+        id: doc-analysis
+        if: steps.changed-files.outputs.any_changed == 'true'
+        env:
+          CHANGED_FILES: ${{ steps.changed-files.outputs.CHANGED_FILES }}
+        run: python3 .github/scripts/doc_analysis.py
+      
+      - name: Post comment on PR
+        if: steps.doc-analysis.outputs.SUGGESTIONS != ''
+        # Pinned to v7.0.1 - https://github.com/actions/github-script/releases/tag/v7.0.1
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        env:
+          # Pass suggestions via environment to avoid interpolation issues
+          SUGGESTIONS: ${{ steps.doc-analysis.outputs.SUGGESTIONS }}
+        with:
+          script: |
+            const suggestions = process.env.SUGGESTIONS;
+            
+            // Unique marker to reliably identify our bot's comments
+            const COMMENT_MARKER = '<!-- AI-CODE-REVIEWER-DOC-BOT -->';
+            
+            // Find existing bot comment by unique marker (more reliable than user type check)
+            let botComment = null;
+            for await (const response of github.paginate.iterator(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            })) {
+              for (const comment of response.data) {
+                if (comment.body.includes(COMMENT_MARKER)) {
+                  botComment = comment;
+                  break;
+                }
+              }
+              if (botComment) break; // Early exit once found
+            }
+            
+            const body = suggestions + '\n\n---\n<sub>🤖 Generated by Documentation Bot | [Configure](.ai/doc-bot.md)</sub>';
+            
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }

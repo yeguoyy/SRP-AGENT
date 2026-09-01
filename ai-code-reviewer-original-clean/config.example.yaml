@@ -1,0 +1,237 @@
+# AI Code Reviewer Configuration
+# Copy this file to config.yaml and set your API keys
+
+version: 1
+
+# ============================================================================
+# ANTHROPIC API — unified LLM gateway via the official Messages API
+# ============================================================================
+anthropic:
+  api_key: ${ANTHROPIC_API_KEY}
+  # base_url: https://api.anthropic.com   # default
+  default_model: claude-sonnet-5
+  timeout_seconds: 600  # long review generations; below this the connection can be dropped
+  max_retries: 3  # transient APIConnectionError/ReadError on long calls are retryable
+  agent_review_deadline_seconds: 900  # wall-clock budget per agent review; backstops retry x timeout hangs
+  enable_prompt_caching: true
+  max_combined_context_tokens: 80000
+  per_file_max_bytes: 524288
+  per_review_github_request_budget: 200
+  full_file_max_lines: 300      # changed files longer than this are sent as hunk excerpts; agents pull the rest via read_file
+  hunk_context_lines: 60        # lines of context kept around each diff hunk in excerpt mode
+  conventions_max_chars: 16000  # aggregate cap on the project-conventions block
+
+# ============================================================================
+# GITHUB INTEGRATION
+# ============================================================================
+github:
+  # Option 1: Personal Access Token (simpler, good for testing)
+  token: ${GITHUB_TOKEN}
+
+  # Option 2: GitHub App (recommended for production/organization use)
+  # app_id: ${GITHUB_APP_ID}
+  # private_key_path: ./github-app.pem
+  # webhook_secret: ${GITHUB_WEBHOOK_SECRET}
+
+# ============================================================================
+# AGENT CONFIGURATION
+# ============================================================================
+agents:
+  - name: security-reviewer
+    model: claude-sonnet-5
+    focus_areas:
+      - security
+      - authentication
+      - data_validation
+    description: "Identifies security vulnerabilities and auth issues"
+    # Thinking ON: security reasoning benefits most from deeper analysis. Sonnet 5
+    # reviews far more thoroughly with thinking on. max_tokens raised so thinking
+    # does not consume the output budget and truncate the findings JSON.
+    max_tokens: 32000
+    temperature: 0.2
+    thinking_enabled: true
+    allow_tool_use: true
+    max_tool_calls: 20
+
+  - name: patterns-reviewer
+    model: claude-sonnet-5
+    focus_areas:
+      - consistency
+      - patterns
+      - architecture
+      - breaking_changes
+    description: "Ensures code follows existing patterns; explores repo via tools"
+    max_tokens: 8192
+    temperature: 0.2
+    thinking_enabled: false
+    allow_tool_use: true
+    max_tool_calls: 8
+
+  - name: logic-reviewer
+    model: claude-sonnet-5
+    focus_areas:
+      - logic
+      - edge_cases
+      - error_handling
+      - correctness
+    # Thinking ON: correctness/edge-case reasoning is the other high-value case.
+    max_tokens: 32000
+    temperature: 0.2
+    thinking_enabled: true
+    allow_tool_use: true
+    max_tool_calls: 20
+
+  - name: performance-reviewer
+    model: claude-sonnet-5
+    focus_areas:
+      - performance
+      - complexity
+      - resource_management
+    description: "Finds performance bottlenecks and inefficiencies"
+    max_tokens: 8192
+    temperature: 0.3
+    thinking_enabled: false
+    allow_tool_use: true
+    max_tool_calls: 8
+
+  - name: style-reviewer
+    model: claude-haiku-4-5-20251001
+    focus_areas:
+      - style
+      - documentation
+      - readability
+    max_tokens: 4096
+    temperature: 0.3
+    thinking_enabled: false
+    allow_tool_use: false
+
+# ============================================================================
+# ORCHESTRATOR SETTINGS
+# ============================================================================
+orchestrator:
+  timeout_seconds: 300
+  min_agents_required: 2
+  max_parallel_agents: 5
+  retry_on_failure: true
+  max_retries: 1
+
+# ============================================================================
+# AGGREGATOR SETTINGS
+# ============================================================================
+aggregator:
+  similarity_threshold: 0.85
+  min_consensus_for_critical: 0.5
+  use_embeddings: false   # embedding-based clustering not yet implemented
+
+# ============================================================================
+# OUTPUT SETTINGS
+# ============================================================================
+output:
+  include_agent_breakdown: true
+  include_confidence_scores: true
+  max_findings_per_file: 10
+  max_total_findings: 50
+
+# ============================================================================
+# REVIEW POLICY
+# ============================================================================
+review_policy:
+  auto_approve_if_no_findings: false
+  block_on_critical: true
+  require_human_review_for:
+    - security
+  ignore_patterns:
+    - "**/*.lock"
+    - "**/*.generated.*"
+    - "**/vendor/**"
+    - "**/node_modules/**"
+    - "**/__pycache__/**"
+
+# ============================================================================
+# SERVER SETTINGS (for webhook mode)
+# ============================================================================
+server:
+  host: "0.0.0.0"
+  port: 8080
+  health_check_path: /health
+  metrics_path: /metrics
+  metrics_enabled: true
+
+# ============================================================================
+# DOCUMENTATION REVIEW
+# ============================================================================
+doc_review:
+  enabled: true
+  architecture_paths:
+    - "architecture/"
+    - "docs/"
+    - "doc/"
+    - "docs-static/"
+  convention_files:
+    - "AGENTS.md"
+    - "CLAUDE.md"
+    - "CONTRIBUTING.md"
+    - ".cursor/rules/README.md"
+  comment_marker: "<!-- AI-CODE-REVIEWER-DOC-BOT -->"
+
+# ============================================================================
+# DOCUMENTATION DRAFT GENERATION
+# ============================================================================
+# When enabled, the doc reviewer calls Claude Sonnet to:
+#   1. Generate full-file updates for stale Markdown docs (source_to_docs_mapping).
+#   2. Scan static HTML doc directories (docs/ or docs-static/) and update any
+#      pages that are made inaccurate by the merged PR.
+# On merge to main/master a new DRAFT PR is opened with the changes for human
+# review — nothing is auto-merged.
+#
+# Disabled by default. Enable per-repo in .ai-reviewer.yaml.
+doc_generation:
+  enabled: false
+
+  # update-docs pipeline: Understand -> Route -> Apply -> Verify.
+  understanding_model: claude-sonnet-5        # stage 1: reads the full PR
+  apply_model: claude-haiku-4-5-20251001        # stage 3: drafts edits/pages
+  verify_model: claude-haiku-4-5-20251001       # stage 4: confidence gate
+  model: claude-haiku-4-5-20251001              # legacy fallback for apply/verify
+
+  max_files: 15                          # max doc targets per run
+  max_understanding_diff_chars: 250000   # stage-1 read budget
+
+  allow_new_sections: true              # add sections to existing pages
+  allow_new_pages: true                 # create new pages (wired into nav.js + index.html)
+  verify_confidence_threshold: medium   # below this -> flag for a human (low|medium|high)
+
+  # Static HTML doc dirs scanned for stale pages on merge.
+  static_docs_dirs:
+    - "docs/"
+    - "docs-static/"
+
+  # Labels applied to the auto-generated doc update PR.
+  pr_labels:
+    - "automated-docs"
+    - "documentation"
+
+  # Open the doc PR as a draft so it doesn't appear ready to merge immediately.
+  pr_draft: true
+
+# ============================================================================
+# LOGGING
+# ============================================================================
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# ============================================================================
+# CLOUD TASKS JOB QUEUE (webhook only; set via environment, not this file)
+# ============================================================================
+# When both TASK_QUEUE_PATH and TASK_TARGET_URL are set, the webhook becomes a
+# thin enqueuer: PR/`/ai-review` events are pushed onto Cloud Tasks and executed
+# durably (with retry + backoff) against POST /process-review. Leave them unset
+# to run reviews inline in the webhook request (local/CI fallback).
+#
+#   TASK_QUEUE_PATH   projects/<P>/locations/<L>/queues/<Q>   full queue path
+#   TASK_TARGET_URL   https://<this-service-url>              this service's base URL
+#   TASK_AUTH_TOKEN   <shared secret>                         required; /process-review
+#                                                             fails closed (401) if unset
+#   TASK_MAX_ATTEMPTS 4                                       retries before terminal
+#                                                             (posts a visible notice)

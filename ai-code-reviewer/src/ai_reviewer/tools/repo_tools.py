@@ -1,0 +1,214 @@
+"""Repo-exploration tools backed by GitHub Contents API.
+
+Exposes read_file / glob / grep as Anthropic tools. All file access
+is pinned to the PR head SHA and is read-only. Enforces per-agent
+call budget and per-review GitHub request budget.
+"""
+
+from __future__ import annotations
+
+import base64
+import logging
+import re
+from pathlib import PurePosixPath
+from typing import Any
+
+from ai_reviewer.github.client import GitHubClient
+from ai_reviewer.session import ReviewSession
+
+logger = logging.getLogger(__name__)
+
+
+class ToolBudgetExhausted(RuntimeError):
+    """Raised when an agent exceeds its tool-call budget."""
+
+
+TOOL_SPECS: list[dict[str, Any]] = [
+    {
+        "name": "read_file",
+        "description": (
+            "Read the full contents of a file at the PR's head commit. "
+            "Prefer reading only files you specifically need. "
+            "Cite path + line numbers in findings."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Repo-relative path"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "glob",
+        "description": (
+            "List repo paths matching a glob pattern (e.g., 'src/**/*.py'). "
+            "Use this before read_file when you do not know the exact path."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string"},
+            },
+            "required": ["pattern"],
+        },
+    },
+    {
+        "name": "grep",
+        "description": (
+            "Regex search across repo paths. Prefer this over reading many "
+            "files. Returns up to 100 matches with path and line numbers."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "Python regex"},
+                "path_glob": {"type": "string", "description": "Glob to restrict search"},
+            },
+            "required": ["pattern", "path_glob"],
+        },
+    },
+]
+
+
+class ToolRegistry:
+    """Dispatches Anthropic tool_use calls to real implementations."""
+
+    def __init__(
+        self,
+        session: ReviewSession,
+        github_client: GitHubClient,
+        agent_id: str,
+        max_calls: int,
+        per_file_max_bytes: int,
+        max_tool_result_bytes: int = 16 * 1024,
+        trimmed_paths: set[str] | None = None,
+    ) -> None:
+        self.session = session
+        self.gh = github_client
+        self.agent_id = agent_id
+        self.max_calls = max_calls
+        self.per_file_max_bytes = per_file_max_bytes
+        self.max_tool_result_bytes = max_tool_result_bytes
+        # Paths sent to the agent as hunk excerpts rather than full contents.
+        # Reading one back means the agent needed the trimmed context (tools
+        # compensating for the pull-based prompt) - logged so we can measure it.
+        self.trimmed_paths = trimmed_paths or set()
+
+    def tool_specs(self) -> list[dict[str, Any]]:
+        return TOOL_SPECS
+
+    async def execute(self, name: str, tool_input: dict[str, Any]) -> str:
+        if self.session.tool_calls_for(self.agent_id) >= self.max_calls:
+            raise ToolBudgetExhausted(
+                f"Agent {self.agent_id} exceeded max_tool_calls={self.max_calls}"
+            )
+        self.session.incr_tool_call(self.agent_id)
+
+        if name == "read_file":
+            path = tool_input["path"]
+            if path in self.trimmed_paths:
+                logger.info("context-trim readback: %s", path)
+            result = self._read_file(path)
+        elif name == "glob":
+            result = self._glob(tool_input["pattern"])
+        elif name == "grep":
+            result = self._grep(tool_input["pattern"], tool_input["path_glob"])
+        else:
+            raise ValueError(f"Unknown tool: {name}")
+        return self._cap_result(result)
+
+    def _cap_result(self, result: str) -> str:
+        # Every tool result re-enters the conversation and is re-sent on every
+        # later round, so a single oversized result can blow the whole context
+        # budget - cap at the model-facing boundary regardless of tool.
+        limit = self.max_tool_result_bytes
+        if len(result.encode("utf-8")) <= limit:
+            return result
+        truncated = result.encode("utf-8")[:limit].decode("utf-8", errors="ignore")
+        return (
+            f"{truncated}\n[output truncated at {limit} bytes - "
+            "use grep or a narrower glob pattern to find what you need "
+            "instead of reading the whole file]"
+        )
+
+    def _read_file(self, path: str) -> str:
+        # Block path traversal and absolute paths. The GitHub source would reject
+        # both, but a local repo source resolves them against the real filesystem,
+        # so this guard is load-bearing rather than just a nicer error.
+        candidate = PurePosixPath(path)
+        if ".." in candidate.parts or candidate.is_absolute():
+            return "[error: path traversal not allowed]"
+        cached = self.session.cached_file(path)
+        if cached is not None:
+            return cached
+        if self.session.is_github_budget_exhausted():
+            return "[error: review GitHub budget exhausted]"
+        self.session.consume_github_request()
+        try:
+            contents = self.gh.get_file_contents(self.session.repo, path, ref=self.session.head_sha)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("read_file(%s) failed: %s", path, e)
+            return f"[error: {e}]"
+        raw = getattr(contents, "content", "") or ""
+        try:
+            text = base64.b64decode(raw).decode("utf-8", errors="replace")
+        except Exception as e:  # noqa: BLE001
+            return f"[error: decode {e}]"
+        if len(text.encode("utf-8")) > self.per_file_max_bytes:
+            # Slice on the byte boundary, not the character index: for multi-byte
+            # content text[:N] can exceed N bytes. errors="ignore" drops any
+            # partial multi-byte char left dangling at the cut.
+            text = text.encode("utf-8")[: self.per_file_max_bytes].decode("utf-8", errors="ignore")
+            text += "\n[... file truncated ...]"
+        self.session.store_file(path, text)
+        return text
+
+    def _tree(self) -> list[str]:
+        cached = self.session.cached_tree()
+        if cached is not None:
+            return cached
+        if self.session.is_github_budget_exhausted():
+            return []
+        self.session.consume_github_request()
+        try:
+            tree = self.gh.get_tree(self.session.repo, self.session.head_sha, recursive=True)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("tree() failed: %s", e)
+            return []
+        paths = [item.path for item in tree.tree if getattr(item, "type", None) == "blob"]
+        self.session.store_tree(paths)
+        return paths
+
+    def _glob(self, pattern: str) -> str:
+        paths = self._tree()
+        hits = [p for p in paths if PurePosixPath(p).match(pattern)]
+        hits = hits[:500]
+        return "\n".join(hits) if hits else "[no matches]"
+
+    def _grep(self, pattern: str, path_glob: str, max_files: int = 50) -> str:
+        # Guard against ReDoS: cap pattern length before handing it to the regex engine.
+        if len(pattern) > 500:
+            return "[error: regex pattern too long (max 500 chars)]"
+        try:
+            regex = re.compile(pattern)
+        except re.error:
+            return "[error: invalid regex pattern]"
+        matches: list[str] = []
+        files_scanned = 0
+        for path in self._tree():
+            if not PurePosixPath(path).match(path_glob):
+                continue
+            if files_scanned >= max_files:
+                matches.append(f"[... grep stopped after scanning {max_files} files ...]")
+                break
+            content = self._read_file(path)
+            files_scanned += 1
+            if content.startswith("[error"):
+                continue
+            for lineno, line in enumerate(content.splitlines(), start=1):
+                if regex.search(line):
+                    matches.append(f"{path}:{lineno}: {line[:200]}")
+                    if len(matches) >= 100:
+                        return "\n".join(matches) + "\n[... grep truncated at 100 matches ...]"
+        return "\n".join(matches) if matches else "[no matches]"

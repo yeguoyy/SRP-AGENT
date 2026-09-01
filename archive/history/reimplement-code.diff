@@ -1,0 +1,2496 @@
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/.gitignore" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/.gitignore"
+index 22497a6..1c82d20 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/.gitignore"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/.gitignore"
+@@ -71,16 +71,23 @@ venv.bak/
+ .cursor/
+ 
+ # Project specific
+ config.yaml
+ *.pem
+ github-app.pem
+ .secrets/
+ 
++# Local / personal (not for public release)
++.ai/
++docs/migrations/2026-04-anthropic-quality-regression.md
++docs/superpowers/plans/2026-03-26-improvement-plan-phase2.md
++docs/superpowers/plans/2026-04-16-anthropic-messages-migration.md
++docs/superpowers/specs/2026-04-15-anthropic-messages-migration-design.md
++
+ # Logs
+ *.log
+ logs/
+ 
+ # Local development
+ .local/
+ *.local.yaml
+ 
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/README.md" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/README.md"
+index a2620fe..79b2fdb 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/README.md"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/README.md"
+@@ -1,32 +1,34 @@
+ # AI Code Reviewer
+ 
+ **Multi-agent code review system that orchestrates multiple LLMs to produce comprehensive, consensus-based code reviews.**
+ 
+ [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+ 
+----
++
++
++***
+ 
+ ## Overview
+ 
+ AI Code Reviewer takes a different approach to automated code review: instead of relying on a single model, it orchestrates **multiple specialized agents** that review code from different perspectives — security, performance, and code quality — then combines their findings into a unified, confidence-scored review.
+ 
+ ### Key Features
+ 
+ - **Multi-Agent Architecture**: Run 2–5+ LLM agents in parallel, each with a specialized focus area
+ - **Consensus-Based Scoring**: Findings are weighted by how many agents agree, reducing false positives
+ - **Anthropic Messages API**: All models (Claude Opus 4.6, Sonnet 4.6) accessed directly via the official `anthropic` SDK, with prompt caching, extended thinking, and tool use
+ - **GitHub Integration**: Automatic PR reviews via webhooks, with inline comments and thread resolution
+ - **Incremental Reviews**: Delta tracking detects new, fixed, and open findings across pushes — with convergence logic that stops reviewing when findings stabilize
+ - **Documentation Review**: Rule-based check that flags missing doc updates on architecture-impacting PRs — works out-of-the-box on any repo by probing for `CLAUDE.md`, `AGENTS.md`, and architecture folders (zero LLM cost)
+ 
+ For the full technical deep-dive — pipeline flowcharts, scoring formulas, convergence state machine, and prompt engineering — see the **[Architecture Documentation](docs/ARCHITECTURE.md)**.
+ 
+----
++***
+ 
+ ## Quick Start
+ 
+ ```bash
+ # Install
+ pip install ai-code-reviewer
+ 
+ # Export credentials
+@@ -35,17 +37,17 @@ export GITHUB_TOKEN=ghp_...
+ 
+ # Review a GitHub PR
+ ai-reviewer review-pr calimero-network/core 123
+ 
+ # Review a local diff
+ git diff main | ai-reviewer review --output markdown
+ ```
+ 
+----
++***
+ 
+ ## How It Works
+ 
+ All LLM agents call Anthropic's Messages API directly via the official `anthropic` SDK. Reasoning-heavy agents run on `claude-opus-4-6` with extended thinking; broader agents run on `claude-sonnet-4-6`. Repo exploration happens through Claude tool use (`read_file` / `glob` / `grep`) backed by the GitHub Contents API — no cloning, no extra infrastructure.
+ 
+ ```mermaid
+ flowchart LR
+     PR["PR Diff"] --> Anthropic["Anthropic Messages API\n(claude-opus-4-6 / sonnet-4-6)"]
+@@ -62,17 +64,17 @@ flowchart LR
+ 
+     Agents --> Agg["Review Aggregator\n• Cluster similar findings\n• Compute consensus scores\n• Rank by severity × agreement"]
+     Agg --> Delta["Delta Tracking\n• New / fixed / open findings\n• Convergence detection"]
+     Delta --> Out["Consolidated Review\n(GitHub / JSON / MD)"]
+ ```
+ 
+ For a detailed breakdown of the pipeline, scoring formulas, and convergence logic, see the **[Architecture Documentation](docs/ARCHITECTURE.md)**.
+ 
+----
++***
+ 
+ ## Configuration
+ 
+ Create `config.yaml`:
+ 
+ ```yaml
+ anthropic:
+   api_key: ${ANTHROPIC_API_KEY}
+@@ -106,17 +108,17 @@ orchestrator:
+ 
+ # Documentation review (rule-based, no LLM cost)
+ doc_review:
+   enabled: true
+   architecture_paths: ["architecture/", "docs/", "doc/"]
+   convention_files: ["AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md"]
+ ```
+ 
+----
++***
+ 
+ ## CLI Commands
+ 
+ ```bash
+ # Review a GitHub PR (includes doc review by default)
+ ai-reviewer review-pr <owner/repo> <pr-number>
+ 
+ # Skip documentation review
+@@ -128,17 +130,17 @@ ai-reviewer review-pr <owner/repo> <pr-number> --doc-check
+ # Start webhook server
+ ai-reviewer serve --port 8080
+ 
+ # Configuration
+ ai-reviewer config validate
+ ai-reviewer config show
+ ```
+ 
+----
++***
+ 
+ ## Output Example
+ 
+ ```
+ Reviewed by 3 agents  |  Quality score: 87%
+ 
+ CRITICAL (1)
+   SQL Injection in auth/login.py:45  [3/3 agents]
+@@ -149,17 +151,17 @@ WARNING (2)
+   Inefficient O(n²) loop in process_batch()  [2/3 agents]
+ 
+ SUGGESTION (3)
+   Add type hints to process_user()
+   Extract magic number 86400 to a named constant
+   Add docstring to AuthHandler
+ ```
+ 
+----
++***
+ 
+ ## Repository Configuration
+ 
+ Add `.ai-reviewer.yaml` to the root of any reviewed repository to customize behavior:
+ 
+ ```yaml
+ # Exclude generated or vendored files from review
+ ignore:
+@@ -174,17 +176,17 @@ agents:
+       Flag all unwrap() calls.
+ 
+ # Review policy
+ policy:
+   require_human_review_for: [security]
+   block_on_critical: true
+ ```
+ 
+----
++***
+ 
+ ## GitHub Actions Setup
+ 
+ ### Basic Setup (`GITHUB_TOKEN`)
+ 
+ The default `GITHUB_TOKEN` provided by GitHub Actions is sufficient for most features:
+ 
+ - Posting reviews and inline comments
+@@ -193,44 +195,42 @@ The default `GITHUB_TOKEN` provided by GitHub Actions is sufficient for most fea
+ 
+ It cannot resolve review threads (collapsing them in the UI), which requires a Classic PAT.
+ 
+ ### Full Features (Classic Personal Access Token)
+ 
+ > **Note:** Fine-grained PATs do not support the `resolveReviewThread` GraphQL mutation. Use a Classic PAT with `repo` scope.
+ 
+ 1. Create a [Classic Personal Access Token](https://github.com/settings/tokens/new) with the `repo` scope.
+-
+ 2. Add it as a repository secret named `GH_PAT`:
+    ```
+    Settings → Secrets and variables → Actions → New repository secret
+    Name: GH_PAT
+    Value: ghp_xxxxxxxxxxxxxxxxxxxx
+    ```
+-
+ 3. The workflow uses `GH_PAT` automatically when present, falling back to `GITHUB_TOKEN`.
+ 
+ For production deployments, prefer a dedicated service account and rotate tokens regularly. GitHub Apps with fine-grained permissions are the recommended long-term approach.
+ 
+----
++***
+ 
+ ## Development
+ 
+ ```bash
+ git clone https://github.com/calimero-network/ai-code-reviewer
+ cd ai-code-reviewer
+ 
+ pip install -e ".[dev]"
+ 
+ pytest
+ ruff check .
+ mypy src/
+ ```
+ 
+----
++***
+ 
+ ## AI Rules & Documentation
+ 
+ The repository ships structured AI context to help coding assistants work with the codebase effectively.
+ 
+ ```
+ .ai/
+ ├── context.md           # Codebase overview — read first
+@@ -247,16 +247,17 @@ The repository ships structured AI context to help coding assistants work with t
+ 
+ The `review-pr` command includes a built-in documentation review that runs alongside the AI code review. It detects architecture-impacting changes (new modules, manifest edits, CI changes, infrastructure files) and checks whether convention files like `CLAUDE.md` or `AGENTS.md` were updated. For repos with `.ai-reviewer.yaml`, it also checks explicit `source_to_docs_mapping` rules. The check is rule-based (no LLM calls) and posts a separate PR comment with suggestions. Disable with `--no-doc-check` or `doc_review.enabled: false` in config.
+ 
+ ### Automatic Doc Update PRs
+ 
+ When stale documentation is detected, the reviewer can automatically generate updated file content and open a PR with the real changes — not just a comment telling you to update them.
+ 
+ **Flow:**
++
+ 1. Feature PR merges to `main`
+ 2. CI triggers `ai-reviewer update-docs` on the merge
+ 3. `update-docs` runs `DocAnalyzer`, finds stale docs via `source_to_docs_mapping`
+ 4. Calls **Claude Sonnet** to rewrite each stale file in full
+ 5. Commits the updated files to a new branch `docs/auto-<sha>`
+ 6. Opens a PR against `main`, assigned to the original PR author
+ 7. Author reviews the diff and merges — **nothing auto-merges**
+ 
+@@ -271,17 +272,17 @@ documentation:
+     "src/**": [docs/api.md, README.md]
+ 
+ doc_generation:
+   enabled: true
+   model: claude-sonnet-4-6
+   max_files: 5
+ ```
+ 
+-2. Add a one-line workflow to each repo (calls the shared reusable workflow):
++1. Add a one-line workflow to each repo (calls the shared reusable workflow):
+ 
+ ```yaml
+ # .github/workflows/doc-update.yaml
+ on:
+   push:
+     branches: [main, master]
+ jobs:
+   doc-update:
+@@ -298,27 +299,27 @@ No copy-pasted workflow logic — the shared workflow lives in this repo and all
+ ```bash
+ # Preview what would be generated — no PR opened, no files committed
+ ai-reviewer update-docs calimero-network/auth-frontend 42 --dry-run
+ 
+ # Actually generate and open the PR
+ ai-reviewer update-docs calimero-network/auth-frontend 42
+ ```
+ 
+-Cost: ~$0.05–0.15 per merge with stale docs (Claude Sonnet, 1–5 files). Zero LLM cost when no stale docs are detected.
++Cost: \~$0.05–0.15 per merge with stale docs (Claude Sonnet, 1–5 files). Zero LLM cost when no stale docs are detected.
+ 
+----
++***
+ 
+ ## Related Projects
+ 
+ - [ai-bounty-hunter](https://github.com/calimero-network/ai-bounty-hunter) - Automatic bounty fixing
+ - [pr-agent](https://github.com/Codium-ai/pr-agent) - Single-agent PR reviews
+ - [SWE-agent](https://github.com/SWE-agent/SWE-agent) - GitHub issue automation
+ 
+----
++***
+ 
+ ## License
+ 
+ MIT License - see [LICENSE](LICENSE) for details.
+ 
+----
++***
+ 
+ <sub>Built with ❤️ by [Calimero Network](https://github.com/calimero-network)</sub>
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/config.example.yaml" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/config.example.yaml"
+index 38e4486..247c6a0 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/config.example.yaml"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/config.example.yaml"
+@@ -1,106 +1,103 @@
+ # AI Code Reviewer Configuration
+ # Copy this file to config.yaml and set your API keys
+ 
+ version: 1
+ 
+ # ============================================================================
+-# ANTHROPIC API — unified LLM gateway via the official Messages API
++# DEEPSEEK API — LLM gateway via DeepSeek's OpenAI-compatible endpoint
+ # ============================================================================
+-anthropic:
+-  api_key: ${ANTHROPIC_API_KEY}
+-  # base_url: https://api.anthropic.com   # default
+-  default_model: claude-opus-4-6
++deepseek:
++  api_key: 你的DEEPSEEK_API_KEY
++  # base_url: https://api.deepseek.com   # default
++  default_model: deepseek-v4-pro
+   timeout_seconds: 300
+   max_retries: 3
+-  enable_prompt_caching: true
+-  max_combined_context_tokens: 150000
++  enable_prompt_caching: false
++  max_combined_context_tokens: 64000
+   per_file_max_bytes: 524288
+   per_review_github_request_budget: 200
+ 
+ # ============================================================================
+ # GITHUB INTEGRATION
+ # ============================================================================
+ github:
+   # Option 1: Personal Access Token (simpler, good for testing)
+-  token: ${GITHUB_TOKEN}
++  token: 你的GITHUB_TOKEN
+ 
+   # Option 2: GitHub App (recommended for production/organization use)
+   # app_id: ${GITHUB_APP_ID}
+   # private_key_path: ./github-app.pem
+   # webhook_secret: ${GITHUB_WEBHOOK_SECRET}
+ 
+ # ============================================================================
+ # AGENT CONFIGURATION
+ # ============================================================================
+-# Diversity comes from model mix (Opus vs Sonnet), system prompts,
+-# focus areas, and extended thinking.
++# Diversity comes from system prompts, focus areas, and tool use.
++# DeepSeek currently exposes a single chat model (deepseek-v4-pro); the
++# reasoning model (deepseek-reasoner) does not support function calling
++# and is therefore not used by the agents below.
+ 
+ agents:
+-  # Reasoning-heavy: Opus + extended thinking
+   - name: security-reviewer
+-    model: claude-opus-4-6
++    model: deepseek-v4-pro
+     focus_areas:
+       - security
+       - authentication
+       - data_validation
+     description: "Identifies security vulnerabilities and auth issues"
+     max_tokens: 16384
+     temperature: 0.2
+-    thinking_enabled: true
+-    thinking_budget_tokens: 8192
++    thinking_enabled: false
+     allow_tool_use: true
+     max_tool_calls: 20
+ 
+   - name: patterns-reviewer
+-    model: claude-opus-4-6
++    model: deepseek-v4-pro
+     focus_areas:
+       - consistency
+       - patterns
+       - architecture
+       - breaking_changes
+     description: "Ensures code follows existing patterns; explores repo via tools"
+     max_tokens: 16384
+     temperature: 0.2
+-    thinking_enabled: true
+-    thinking_budget_tokens: 8192
++    thinking_enabled: false
+     allow_tool_use: true
+     max_tool_calls: 30
+ 
+   - name: logic-reviewer
+-    model: claude-opus-4-6
++    model: deepseek-v4-pro
+     focus_areas:
+       - logic
+       - edge_cases
+       - error_handling
+       - correctness
+     max_tokens: 16384
+     temperature: 0.2
+-    thinking_enabled: true
+-    thinking_budget_tokens: 8192
++    thinking_enabled: false
+     allow_tool_use: true
+     max_tool_calls: 20
+ 
+-  # Broad/fast: Sonnet without thinking
+   - name: performance-reviewer
+-    model: claude-sonnet-4-6
++    model: deepseek-v4-pro
+     focus_areas:
+       - performance
+       - complexity
+       - resource_management
+     description: "Finds performance bottlenecks and inefficiencies"
+     max_tokens: 8192
+     temperature: 0.3
+     thinking_enabled: false
+     allow_tool_use: true
+     max_tool_calls: 10
+ 
+   - name: style-reviewer
+-    model: claude-sonnet-4-6
++    model: deepseek-v4-pro
+     focus_areas:
+       - style
+       - documentation
+       - readability
+     max_tokens: 8192
+     temperature: 0.3
+     thinking_enabled: false
+     allow_tool_use: false
+@@ -173,28 +170,28 @@ doc_review:
+     - "CLAUDE.md"
+     - "CONTRIBUTING.md"
+     - ".cursor/rules/README.md"
+   comment_marker: "<!-- AI-CODE-REVIEWER-DOC-BOT -->"
+ 
+ # ============================================================================
+ # DOCUMENTATION DRAFT GENERATION
+ # ============================================================================
+-# When enabled, the doc reviewer calls Claude Sonnet to:
++# When enabled, the doc reviewer calls DeepSeek to:
+ #   1. Generate full-file updates for stale Markdown docs (source_to_docs_mapping).
+ #   2. Scan static HTML doc directories (docs/ or docs-static/) and update any
+ #      pages that are made inaccurate by the merged PR.
+ # On merge to main/master a new DRAFT PR is opened with the changes for human
+ # review — nothing is auto-merged.
+ #
+ # Disabled by default. Enable per-repo in .ai-reviewer.yaml.
+ doc_generation:
+   enabled: false
+-  model: claude-sonnet-4-6   # Sonnet is sufficient for prose/HTML drafting
+-  max_files: 15              # max Claude calls per run (HTML pages + Markdown)
++  model: deepseek-v4-pro       # deepseek-v4-pro is sufficient for prose/HTML drafting
++  max_files: 15              # max model calls per run (HTML pages + Markdown)
+ 
+   # Directories containing static HTML GitHub Pages docs.
+   # update-docs will scan these for .html files and update stale pages on merge.
+   static_docs_dirs:
+     - "docs/"
+     - "docs-static/"
+ 
+   # Labels applied to the auto-generated doc update PR.
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/pyproject.toml" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/pyproject.toml"
+index 2cf7162..b1e30f1 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/pyproject.toml"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/pyproject.toml"
+@@ -19,17 +19,17 @@ classifiers = [
+     "License :: OSI Approved :: MIT License",
+     "Programming Language :: Python :: 3",
+     "Programming Language :: Python :: 3.11",
+     "Programming Language :: Python :: 3.12",
+     "Topic :: Software Development :: Quality Assurance",
+ ]
+ 
+ dependencies = [
+-    "anthropic>=0.40.0",
++    "openai>=1.30.0",
+     "PyGithub>=2.1.0",
+     "fastapi>=0.109.0",
+     "uvicorn>=0.27.0",
+     "click>=8.1.0",
+     "pydantic>=2.6.0",
+     "pydantic-settings>=2.1.0",
+     "httpx>=0.26.0",
+     "pyyaml>=6.0.0",
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/agents/__init__.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/agents/__init__.py"
+index 143f069..c6e5d12 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/agents/__init__.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/agents/__init__.py"
+@@ -1,19 +1,19 @@
+ """Review agents for AI Code Reviewer."""
+ 
+-from ai_reviewer.agents.anthropic_client import AnthropicClient, AnthropicReviewResult
++from ai_reviewer.agents.deepseek_client import DeepSeekClient, DeepSeekReviewResult
+ from ai_reviewer.agents.base import ReviewAgent
+ from ai_reviewer.agents.patterns import PatternsAgent, StyleAgent
+ from ai_reviewer.agents.performance import LogicAgent, PerformanceAgent
+ from ai_reviewer.agents.security import AuthenticationAgent, SecurityAgent
+ 
+ __all__ = [
+-    "AnthropicClient",
+-    "AnthropicReviewResult",
++    "DeepSeekClient",
++    "DeepSeekReviewResult",
+     "AuthenticationAgent",
+     "LogicAgent",
+     "PatternsAgent",
+     "PerformanceAgent",
+     "ReviewAgent",
+     "SecurityAgent",
+     "StyleAgent",
+ ]
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/agents/base.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/agents/base.py"
+index ac3f8a8..7aecb7a 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/agents/base.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/agents/base.py"
+@@ -1,56 +1,59 @@
+-"""Base class for review agents (Anthropic Messages API backed)."""
++"""Base class for review agents (DeepSeek chat completions backed)."""
+ 
+ from __future__ import annotations
+ 
+ import logging
+ import time
+ from typing import Any
+ 
+-from ai_reviewer.agents.anthropic_client import AnthropicClient
++from ai_reviewer.agents.deepseek_client import DeepSeekClient
+ from ai_reviewer.context.builder import FINDINGS_SCHEMA
+ from ai_reviewer.models.context import ReviewContext
+ from ai_reviewer.models.findings import Category, ReviewFinding, Severity
+ from ai_reviewer.models.review import AgentReview
+ 
+ logger = logging.getLogger(__name__)
+ 
+ 
+ class ReviewAgent:
+     """Base class for all review agents."""
+ 
+-    MODEL: str = "claude-opus-4-6"
++    MODEL: str = "deepseek-v4-pro"
+     AGENT_TYPE: str = "base"
+     FOCUS_AREAS: list[str] = []
+     SYSTEM_PROMPT: str = "You are a code reviewer."
+     THINKING_ENABLED: bool = False
+ 
+     def __init__(
+         self,
+-        client: AnthropicClient,
++        client: DeepSeekClient,
+         agent_id: str,
+         system_blocks: list[dict[str, Any]],
+         user_blocks: list[dict[str, Any]],
+         tool_registry: Any,
+         max_tokens: int = 4096,
+         temperature: float = 0.3,
+         thinking_enabled: bool | None = None,
++        model: str | None = None,
+     ) -> None:
+         self.client = client
+         self._agent_id = agent_id
+         self._system_blocks = system_blocks
+         self._user_blocks = user_blocks
+         self._tool_registry = tool_registry
+         self._max_tokens = max_tokens
+         self._temperature = temperature
+         # Config override takes precedence over class-level default
+         self._thinking_enabled = (
+             thinking_enabled if thinking_enabled is not None else self.THINKING_ENABLED
+         )
++        # Model comes from config (passed in); fall back to the class-level MODEL.
++        self._model = model or self.MODEL
+ 
+     @property
+     def agent_id(self) -> str:
+         return self._agent_id
+ 
+     @property
+     def focus_areas(self) -> list[str]:
+         return self.FOCUS_AREAS
+@@ -62,17 +65,17 @@ class ReviewAgent:
+         context: ReviewContext | dict[str, Any],
+     ) -> AgentReview:
+         start_time = time.monotonic()
+ 
+         system_blocks = self._prepend_role(self._system_blocks)
+ 
+         try:
+             result = await self.client.run_review(
+-                model=self.MODEL,
++                model=self._model,
+                 system_blocks=system_blocks,
+                 user_blocks=self._user_blocks,
+                 output_schema=FINDINGS_SCHEMA,
+                 tool_registry=self._tool_registry,
+                 enable_thinking=self._thinking_enabled,
+                 max_tokens=self._max_tokens,
+                 temperature=self._temperature,
+             )
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/agents/patterns.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/agents/patterns.py"
+index 85a5b50..d33922a 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/agents/patterns.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/agents/patterns.py"
+@@ -1,17 +1,17 @@
+ """Pattern and consistency focused review agent."""
+ 
+ from ai_reviewer.agents.base import ReviewAgent
+ 
+ 
+ class PatternsAgent(ReviewAgent):
+     """Agent specialized in code patterns and consistency."""
+ 
+-    MODEL = "claude-opus-4-6"
++    MODEL = "deepseek-v4-pro"
+     AGENT_TYPE = "patterns-reviewer"
+     FOCUS_AREAS = ["consistency", "patterns", "architecture", "maintainability"]
+     THINKING_ENABLED = True
+ 
+     SYSTEM_PROMPT = """You are an expert code reviewer focused on code quality and consistency.
+ 
+ Focus your review on:
+ 
+@@ -48,17 +48,17 @@ Focus your review on:
+ Focus on issues that affect long-term maintainability.
+ Suggest patterns and refactoring when appropriate.
+ """
+ 
+ 
+ class StyleAgent(ReviewAgent):
+     """Agent focused on code style and documentation."""
+ 
+-    MODEL = "claude-sonnet-4-6"
++    MODEL = "deepseek-v4-pro"
+     AGENT_TYPE = "style-reviewer"
+     FOCUS_AREAS = ["style", "documentation", "readability"]
+     THINKING_ENABLED = False
+ 
+     SYSTEM_PROMPT = """You are a code reviewer focused on readability and documentation.
+ 
+ Focus your review on:
+ 
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/agents/performance.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/agents/performance.py"
+index 9e8ef2a..0c869c4 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/agents/performance.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/agents/performance.py"
+@@ -1,17 +1,17 @@
+ """Performance-focused review agent."""
+ 
+ from ai_reviewer.agents.base import ReviewAgent
+ 
+ 
+ class PerformanceAgent(ReviewAgent):
+     """Agent specialized in performance and efficiency issues."""
+ 
+-    MODEL = "claude-sonnet-4-6"
++    MODEL = "deepseek-v4-pro"
+     AGENT_TYPE = "performance-reviewer"
+     FOCUS_AREAS = ["performance", "complexity", "resource_management", "efficiency"]
+     THINKING_ENABLED = False
+ 
+     SYSTEM_PROMPT = """You are an expert performance engineer reviewing code for efficiency issues.
+ 
+ Focus your review on:
+ 
+@@ -48,17 +48,17 @@ Focus your review on:
+ Provide specific complexity analysis (Big-O) when relevant.
+ Suggest concrete optimizations with example code when possible.
+ """
+ 
+ 
+ class LogicAgent(ReviewAgent):
+     """Agent specialized in logic errors and edge cases."""
+ 
+-    MODEL = "claude-opus-4-6"
++    MODEL = "deepseek-v4-pro"
+     AGENT_TYPE = "logic-reviewer"
+     FOCUS_AREAS = ["logic", "edge_cases", "error_handling", "correctness"]
+     THINKING_ENABLED = True
+ 
+     SYSTEM_PROMPT = """You are an expert code reviewer focused on correctness and logic.
+ 
+ Focus your review on:
+ 
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/agents/security.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/agents/security.py"
+index 4dd81f3..27cc495 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/agents/security.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/agents/security.py"
+@@ -1,17 +1,17 @@
+ """Security-focused review agent."""
+ 
+ from ai_reviewer.agents.base import ReviewAgent
+ 
+ 
+ class SecurityAgent(ReviewAgent):
+     """Agent specialized in security vulnerability detection."""
+ 
+-    MODEL = "claude-opus-4-6"
++    MODEL = "deepseek-v4-pro"
+     AGENT_TYPE = "security-reviewer"
+     FOCUS_AREAS = ["security", "authentication", "data_validation", "cryptography"]
+     THINKING_ENABLED = True
+ 
+     SYSTEM_PROMPT = """You are an expert security code reviewer with deep knowledge of:
+ - OWASP Top 10 vulnerabilities
+ - Common security anti-patterns
+ - Secure coding practices
+@@ -52,17 +52,17 @@ Be thorough but precise. Only report issues you can clearly demonstrate in the c
+ Do not speculate about issues that might exist elsewhere.
+ Provide specific line numbers and concrete evidence for each finding.
+ """
+ 
+ 
+ class AuthenticationAgent(ReviewAgent):
+     """Agent specialized in authentication and authorization issues."""
+ 
+-    MODEL = "claude-opus-4-6"
++    MODEL = "deepseek-v4-pro"
+     AGENT_TYPE = "authentication-reviewer"
+     FOCUS_AREAS = ["authentication", "authorization", "session_management"]
+     THINKING_ENABLED = True
+ 
+     SYSTEM_PROMPT = """You are an expert in authentication and authorization security.
+ 
+ Focus your review on:
+ 
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/cli.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/cli.py"
+index 8f637cf..9760091 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/cli.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/cli.py"
+@@ -102,17 +102,17 @@ def review_pr(
+     no_approve: bool,
+     reviewer_name: str,
+     config_path: str | None,
+     no_cross_review: bool,
+     min_agreement: float,
+     force_review: bool,
+     doc_check: bool | None,
+ ) -> None:
+-    """Review a GitHub pull request using Anthropic Claude agent(s).
++    """Review a GitHub pull request using DeepSeek agent(s).
+ 
+     With --agents=1: Single comprehensive review
+     With --agents=2: Security + Performance agents (cross-review on by default)
+     With --agents=3 (default): Security + Performance + Quality agents (cross-review on by default)
+     Use --no-cross-review to skip the second round (validate & rank findings).
+     Use --min-agreement to tune how many agents must validate a finding to keep it (0-1).
+     """
+     asyncio.run(
+@@ -142,17 +142,17 @@ async def review_pr_async(
+     no_approve: bool = False,
+     reviewer_name: str = "AI Code Reviewer",
+     config_path: Path | None = None,
+     enable_cross_review: bool = True,
+     min_validation_agreement: float = 2 / 3,
+     force_review: bool = False,
+     doc_check: bool | None = None,
+ ) -> None:
+-    """Async implementation of PR review using Anthropic Claude agents."""
++    """Async implementation of PR review using DeepSeek agents."""
+     # Auto-detect GitHub Actions environment - never allow APPROVE there
+     is_github_actions = os.getenv("GITHUB_ACTIONS") == "true"
+     allow_approve = not no_approve and not is_github_actions
+ 
+     if is_github_actions and not no_approve:
+         console.print("[dim]ℹ️  Running in GitHub Actions - APPROVE disabled automatically[/dim]")
+     config = load_config(config_path)
+     errors = validate_config(config)
+@@ -161,23 +161,23 @@ async def review_pr_async(
+             console.print(f"[red]Config error:[/red] {error}")
+         sys.exit(1)
+ 
+     console.print(f"🔍 Reviewing PR #{pr_number} in [bold]{repo}[/bold]...")
+     console.print(
+         f"[dim]Requested {num_agents} agent(s); actual count may be reduced for small PRs[/dim]"
+     )
+ 
+-    if not config.anthropic or not config.anthropic.api_key:
++    if not config.deepseek or not config.deepseek.api_key:
+         console.print(
+-            "[red]error:[/red] anthropic.api_key not configured "
+-            "(set ANTHROPIC_API_KEY or anthropic.api_key in config.yaml)"
++            "[red]error:[/red] deepseek.api_key not configured "
++            "(set DEEPSEEK_API_KEY or deepseek.api_key in config.yaml)"
+         )
+         sys.exit(2)
+-    anthropic_cfg = config.anthropic
++    deepseek_cfg = config.deepseek
+ 
+     # Pre-agent checks (github output only — json/markdown always run agents)
+     gh: GitHubClient | None = None
+     pr: PullRequest | None = None
+     meta: ReviewMeta | None = None
+     recheck_review: ConsolidatedReview | None = None
+ 
+     if output == "github":
+@@ -207,17 +207,17 @@ async def review_pr_async(
+             if lgtm_delta is not None:
+                 console.print(
+                     "[dim]🔍 LGTM candidate detected — running lightweight 1-agent re-check…[/dim]"
+                 )
+                 try:
+                     recheck_review = await run_review(
+                         repo=repo,
+                         pr_number=pr_number,
+-                        anthropic_cfg=anthropic_cfg,
++                        deepseek_cfg=deepseek_cfg,
+                         github_token=config.github.token,
+                         num_agents=1,
+                         enable_cross_review=False,
+                         min_validation_agreement=min_validation_agreement,
+                         config=config,
+                     )
+                 except Exception as e:
+                     console.print(f"[red]Error during LGTM re-check:[/red] {e}")
+@@ -269,17 +269,17 @@ async def review_pr_async(
+         if status != last_status[0]:
+             console.print(f"  → Agent status: [cyan]{status}[/cyan]")
+             last_status[0] = status
+ 
+     try:
+         review = await run_review(
+             repo=repo,
+             pr_number=pr_number,
+-            anthropic_cfg=anthropic_cfg,
++            deepseek_cfg=deepseek_cfg,
+             github_token=config.github.token,
+             on_status=on_status,
+             num_agents=num_agents,
+             enable_cross_review=enable_cross_review,
+             min_validation_agreement=min_validation_agreement,
+             config=config,
+         )
+     except Exception as e:
+@@ -287,20 +287,20 @@ async def review_pr_async(
+         sys.exit(1)
+ 
+     # Check if all agents failed
+     if review.all_agents_failed:
+         console.print(f"[red]❌ All {review.agent_count} agents failed![/red]")
+         console.print(f"   Time: {review.total_review_time_ms / 1000:.1f}s")
+         console.print("\n[yellow]Not posting to GitHub - all agents failed.[/yellow]")
+         console.print("\n[bold]Possible causes:[/bold]")
+-        console.print("  • Invalid or expired Anthropic API key")
++        console.print("  • Invalid or expired DeepSeek API key")
+         console.print("  • Rate limit exceeded")
+         console.print("  • Network connectivity issues")
+-        console.print("\nCheck your ANTHROPIC_API_KEY and try again.")
++        console.print("\nCheck your DEEPSEEK_API_KEY and try again.")
+         sys.exit(1)
+ 
+     effective_agents = review.agent_count
+     cross_review_ran = effective_agents > 1 and enable_cross_review
+     if effective_agents == 1:
+         msg = (
+             "[yellow]Used 1 comprehensive agent (PR too small for multi-agent)[/yellow]"
+             if num_agents > 1
+@@ -596,28 +596,28 @@ async def _update_docs_async(
+ ) -> None:
+     config = load_config(config_path)
+     errors = validate_config(config)
+     if errors:
+         for error in errors:
+             console.print(f"[red]Config error:[/red] {error}")
+         raise RuntimeError(f"Invalid config: {'; '.join(errors)}")
+ 
+-    if not config.anthropic or not config.anthropic.api_key:
+-        console.print("[red]error:[/red] ANTHROPIC_API_KEY not set")
+-        raise RuntimeError("ANTHROPIC_API_KEY not set")
++    if not config.deepseek or not config.deepseek.api_key:
++        console.print("[red]error:[/red] DEEPSEEK_API_KEY not set")
++        raise RuntimeError("DEEPSEEK_API_KEY not set")
+ 
+     gh = GitHubClient(config.github.token)
+     console.print(f"📄 Fetching PR #{pr_number} from [bold]{repo}[/bold]...")
+ 
+     result = await run_doc_update(
+         repo=repo,
+         pr_number=pr_number,
+         gh=gh,
+-        anthropic_cfg=config.anthropic,
++        deepseek_cfg=config.deepseek,
+         doc_generation=config.doc_generation,
+         base=base,
+         dry_run=dry_run,
+     )
+ 
+     if result.skipped:
+         for d in result.failed:
+             console.print(f"[yellow]⚠️  Skipped {d.suggestion.file}: {d.error}[/yellow]")
+@@ -693,20 +693,34 @@ def config_show(config_path: str | None) -> None:
+     table.add_column("Focus Areas")
+ 
+     for agent in config.agents:
+         table.add_row(agent.name, agent.model, ", ".join(agent.focus_areas))
+ 
+     console.print(table)
+ 
+     # Other settings
+-    if config.anthropic:
+-        console.print(f"\n[bold]Anthropic API:[/bold] {config.anthropic.base_url}")
+-        console.print(f"[bold]Model:[/bold] {config.anthropic.default_model}")
+-        console.print(f"[bold]Timeout:[/bold] {config.anthropic.timeout_seconds}s")
++    if config.deepseek:
++        console.print(f"\n[bold]DeepSeek API:[/bold] {config.deepseek.base_url}")
++        console.print(f"[bold]Model:[/bold] {config.deepseek.default_model}")
++        console.print(f"[bold]Timeout:[/bold] {config.deepseek.timeout_seconds}s")
++
++    # GitHub token (masked)
++    token = config.github.token
++    if not token:
++        masked = "(not set)"
++    elif len(token) <= 8:
++        masked = f"{token[:2]}*** (len={len(token)})"
++    else:
++        masked = f"{token[:4]}...{token[-4:]} (len={len(token)})"
++    console.print(f"\n[bold]GitHub Token:[/bold] {masked}")
++    if config.github.webhook_secret:
++        console.print("[bold]Webhook Secret:[/bold] (set)")
++    else:
++        console.print("[bold]Webhook Secret:[/bold] (not set)")
+ 
+ 
+ @cli.command("serve")
+ @click.option("--port", default=8080, help="Port to listen on")
+ @click.option("--host", default="0.0.0.0", help="Host to bind to")
+ @click.option("--config", "config_path", type=click.Path(exists=True), help="Config file path")
+ def serve(port: int, host: str, config_path: str | None) -> None:
+     """Start the webhook server."""
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/config.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/config.py"
+index 2ea7f48..332681d 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/config.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/config.py"
+@@ -21,26 +21,26 @@ class AgentConfig:
+     include_codebase_context: bool = False
+     thinking_enabled: bool = False
+     thinking_budget_tokens: int = 8192
+     allow_tool_use: bool = True
+     max_tool_calls: int = 20
+ 
+ 
+ @dataclass
+-class AnthropicApiConfig:
+-    """Anthropic Messages API configuration."""
++class DeepSeekApiConfig:
++    """DeepSeek API configuration (OpenAI-compatible endpoint)."""
+ 
+     api_key: str
+-    base_url: str = "https://api.anthropic.com"
++    base_url: str = "https://api.deepseek.com"
+     timeout_seconds: int = 300
+     max_retries: int = 3
+-    default_model: str = "claude-opus-4-6"
+-    enable_prompt_caching: bool = True
+-    max_combined_context_tokens: int = 150_000
++    default_model: str = "deepseek-v4-pro"
++    enable_prompt_caching: bool = False
++    max_combined_context_tokens: int = 64_000
+     per_file_max_bytes: int = 512 * 1024
+     per_review_github_request_budget: int = 200
+ 
+ 
+ @dataclass
+ class GitHubConfig:
+     """GitHub integration configuration."""
+ 
+@@ -124,41 +124,41 @@ class DocReviewSettings:
+     )
+     comment_marker: str = "<!-- AI-CODE-REVIEWER-DOC-BOT -->"
+ 
+ 
+ @dataclass
+ class DocGenerationSettings:
+     """AI-powered documentation draft generation configuration.
+ 
+-    When enabled, the doc reviewer calls Claude Sonnet to draft updated sections
++    When enabled, the doc reviewer calls DeepSeek to draft updated sections
+     for stale documentation files and posts them as expandable suggestions inside
+     the existing doc-bot PR comment.  Disabled by default — opt in per-repo via
+     ``doc_generation.enabled: true`` in ``.ai-reviewer.yaml``.
+     """
+ 
+     enabled: bool = False
+-    model: str = "claude-sonnet-4-6"
++    model: str = "deepseek-v4-pro"
+     max_files: int = 15
+     # Directories containing static HTML docs (GitHub Pages sites).
+     # When set, update-docs scans these dirs for HTML pages to update on merge.
+     static_docs_dirs: list[str] = field(
+         default_factory=lambda: ["architecture/", "docs/", "docs-static/"]
+     )
+     # Labels to apply to auto-generated doc update PRs.
+     pr_labels: list[str] = field(default_factory=lambda: ["automated-docs", "documentation"])
+     # Open doc update PRs as drafts so they don't appear ready to merge.
+     pr_draft: bool = True
+ 
+ 
+ @dataclass
+ class Config:
+     """Complete application configuration."""
+ 
+-    anthropic: AnthropicApiConfig | None
++    deepseek: DeepSeekApiConfig | None
+     github: GitHubConfig
+     agents: list[AgentConfig]
+     orchestrator: OrchestratorSettings = field(default_factory=OrchestratorSettings)
+     aggregator: AggregatorSettings = field(default_factory=AggregatorSettings)
+     output: OutputSettings = field(default_factory=OutputSettings)
+     review_policy: ReviewPolicy = field(default_factory=ReviewPolicy)
+     server: ServerSettings = field(default_factory=ServerSettings)
+     doc_review: DocReviewSettings = field(default_factory=DocReviewSettings)
+@@ -178,17 +178,17 @@ def load_config(config_path: Path | None = None) -> Config:
+     if config_path is None:
+         config_path = Path("config.yaml")
+         if not config_path.exists():
+             config_path = Path("config.example.yaml")
+ 
+     # Load from file if exists
+     raw_config: dict[str, Any] = {}
+     if config_path.exists():
+-        with open(config_path) as f:
++        with open(config_path, encoding="utf-8") as f:
+             raw_config = yaml.safe_load(f) or {}
+ 
+     # Expand environment variables
+     raw_config = _expand_env_vars(raw_config)
+ 
+     # Parse configuration
+     return _parse_config(raw_config)
+ 
+@@ -204,28 +204,28 @@ def _expand_env_vars(obj: Any) -> Any:
+         return {k: _expand_env_vars(v) for k, v in obj.items()}
+     elif isinstance(obj, list):
+         return [_expand_env_vars(v) for v in obj]
+     return obj
+ 
+ 
+ def _parse_config(raw: dict[str, Any]) -> Config:
+     """Parse raw config dict into Config object."""
+-    # Anthropic config — always constructed; falls back to env var when YAML block absent
+-    anthropic_raw = raw.get("anthropic", {})
+-    anthropic = AnthropicApiConfig(
+-        api_key=anthropic_raw.get("api_key") or os.environ.get("ANTHROPIC_API_KEY", ""),
+-        base_url=anthropic_raw.get("base_url", "https://api.anthropic.com"),
+-        timeout_seconds=anthropic_raw.get("timeout_seconds", 300),
+-        max_retries=anthropic_raw.get("max_retries", 3),
+-        default_model=anthropic_raw.get("default_model", "claude-opus-4-6"),
+-        enable_prompt_caching=anthropic_raw.get("enable_prompt_caching", True),
+-        max_combined_context_tokens=anthropic_raw.get("max_combined_context_tokens", 150_000),
+-        per_file_max_bytes=anthropic_raw.get("per_file_max_bytes", 512 * 1024),
+-        per_review_github_request_budget=anthropic_raw.get("per_review_github_request_budget", 200),
++    # DeepSeek config — always constructed; falls back to env var when YAML block absent
++    deepseek_raw = raw.get("deepseek", {})
++    deepseek = DeepSeekApiConfig(
++        api_key=deepseek_raw.get("api_key") or os.environ.get("DEEPSEEK_API_KEY", ""),
++        base_url=deepseek_raw.get("base_url", "https://api.deepseek.com"),
++        timeout_seconds=deepseek_raw.get("timeout_seconds", 300),
++        max_retries=deepseek_raw.get("max_retries", 3),
++        default_model=deepseek_raw.get("default_model", "deepseek-v4-pro"),
++        enable_prompt_caching=deepseek_raw.get("enable_prompt_caching", False),
++        max_combined_context_tokens=deepseek_raw.get("max_combined_context_tokens", 64_000),
++        per_file_max_bytes=deepseek_raw.get("per_file_max_bytes", 512 * 1024),
++        per_review_github_request_budget=deepseek_raw.get("per_review_github_request_budget", 200),
+     )
+ 
+     # GitHub config
+     github_raw = raw.get("github", {})
+     github = GitHubConfig(
+         token=github_raw.get("token") or os.environ.get("GITHUB_TOKEN", ""),
+         webhook_secret=github_raw.get("webhook_secret"),
+         app_id=github_raw.get("app_id"),
+@@ -252,29 +252,29 @@ def _parse_config(raw: dict[str, Any]) -> Config:
+             )
+         )
+ 
+     # Default agents if none configured
+     if not agents:
+         agents = [
+             AgentConfig(
+                 name="security-reviewer",
+-                model="claude-opus-4-6",
++                model="deepseek-v4-pro",
+                 focus_areas=["security", "authentication"],
+                 thinking_enabled=True,
+                 thinking_budget_tokens=8192,
+             ),
+             AgentConfig(
+                 name="performance-reviewer",
+-                model="claude-sonnet-4-6",
++                model="deepseek-v4-pro",
+                 focus_areas=["performance", "complexity"],
+             ),
+             AgentConfig(
+                 name="patterns-reviewer",
+-                model="claude-opus-4-6",
++                model="deepseek-v4-pro",
+                 focus_areas=["consistency", "patterns"],
+                 thinking_enabled=True,
+                 thinking_budget_tokens=8192,
+             ),
+         ]
+ 
+     # Orchestrator settings
+     orch_raw = raw.get("orchestrator", {})
+@@ -339,27 +339,27 @@ def _parse_config(raw: dict[str, Any]) -> Config:
+         ),
+         comment_marker=doc_raw.get("comment_marker", "<!-- AI-CODE-REVIEWER-DOC-BOT -->"),
+     )
+ 
+     # Doc generation settings
+     docgen_raw = raw.get("doc_generation", {})
+     doc_generation = DocGenerationSettings(
+         enabled=docgen_raw.get("enabled", False),
+-        model=docgen_raw.get("model", "claude-sonnet-4-6"),
++        model=docgen_raw.get("model", "deepseek-v4-pro"),
+         max_files=docgen_raw.get("max_files", 15),
+         static_docs_dirs=docgen_raw.get(
+             "static_docs_dirs", ["architecture/", "docs/", "docs-static/"]
+         ),
+         pr_labels=docgen_raw.get("pr_labels", ["automated-docs", "documentation"]),
+         pr_draft=docgen_raw.get("pr_draft", True),
+     )
+ 
+     return Config(
+-        anthropic=anthropic,
++        deepseek=deepseek,
+         github=github,
+         agents=agents,
+         orchestrator=orchestrator,
+         aggregator=aggregator,
+         output=output,
+         review_policy=review_policy,
+         server=server,
+         doc_review=doc_review,
+@@ -373,18 +373,18 @@ def validate_config(config: Config) -> list[str]:
+     Args:
+         config: Configuration to validate
+ 
+     Returns:
+         List of validation error messages (empty if valid)
+     """
+     errors = []
+ 
+-    if not config.anthropic or not config.anthropic.api_key:
+-        errors.append("Missing Anthropic API key (set ANTHROPIC_API_KEY or anthropic.api_key)")
++    if not config.deepseek or not config.deepseek.api_key:
++        errors.append("Missing DeepSeek API key (set DEEPSEEK_API_KEY or deepseek.api_key)")
+ 
+     if not config.github.token:
+         errors.append("Missing GitHub token (set GITHUB_TOKEN or github.token)")
+ 
+     if not config.agents:
+         errors.append("No agents configured")
+ 
+     if config.orchestrator.min_agents_required > len(config.agents):
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/context/builder.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/context/builder.py"
+index bfd9c91..4d5917d 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/context/builder.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/context/builder.py"
+@@ -1,9 +1,9 @@
+-"""Assemble system/user prompt blocks for Anthropic Messages API."""
++"""Assemble system/user prompt blocks for the DeepSeek chat completions API."""
+ 
+ from __future__ import annotations
+ 
+ import json
+ from typing import Any
+ 
+ FINDINGS_SCHEMA: dict[str, Any] = {
+     "type": "object",
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/docs/analyzer.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/docs/analyzer.py"
+index dbbfbc9..32a49d2 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/docs/analyzer.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/docs/analyzer.py"
+@@ -12,17 +12,17 @@ from __future__ import annotations
+ import asyncio
+ import fnmatch
+ import os
+ import re as _re
+ from dataclasses import dataclass
+ from typing import TYPE_CHECKING
+ 
+ if TYPE_CHECKING:
+-    from ai_reviewer.config import AnthropicApiConfig
++    from ai_reviewer.config import DeepSeekApiConfig
+     from ai_reviewer.github.client import GitHubClient
+ 
+ 
+ @dataclass(frozen=True)
+ class DocSuggestion:
+     file: str
+     reason: str
+     priority: str = "normal"
+@@ -363,17 +363,17 @@ If an update IS needed, return the COMPLETE updated HTML file.
+ Rules for HTML updates:
+ - Preserve ALL HTML structure, tags, attributes, CSS classes, inline styles, and scripts exactly.
+ - Only update human-readable text content that is made inaccurate by the code change.
+ - Do not reformat, re-indent, or restructure the HTML.
+ - Do not escape or unescape entities that were already correct.
+ - Do not add commentary before or after the HTML — return only the file or NO_UPDATE_NEEDED.
+ """
+ 
+-# Sentinel returned by Claude when an HTML page does not need updating.
++# Sentinel returned by the model when an HTML page does not need updating.
+ _NO_UPDATE_SENTINEL = "NO_UPDATE_NEEDED"
+ 
+ # ~4K chars ≈ ~1K tokens — keeps prompt cost low while providing enough context.
+ _MAX_DIFF_CHARS = 4000
+ # ~8K chars ≈ ~2K tokens — sufficient for most Markdown docs.
+ _MAX_DOC_CHARS = 8000
+ # HTML docs are larger due to markup; allow more context for accurate updates.
+ _MAX_DOC_CHARS_HTML = 20_000
+@@ -386,43 +386,45 @@ def _strip_html_tags(html: str) -> str:
+     return text.strip()
+ 
+ 
+ async def generate_doc_drafts(
+     suggestions: list[DocSuggestion],
+     diff: str,
+     repo_name: str,
+     ref: str,
+-    anthropic_cfg: AnthropicApiConfig,
++    deepseek_cfg: DeepSeekApiConfig,
+     gh: GitHubClient,
+-    model: str = "claude-sonnet-4-6",
++    model: str | None = None,
+     max_files: int = 15,
+ ) -> list[DocDraft]:
+     """Generate AI-drafted full-file updates for stale documentation files.
+ 
+     Processes suggestions that map to real files.  Directory-level suggestions
+     (path ending with ``/``) are skipped — those are handled by scanning the
+     directory for HTML files in the caller.
+ 
+-    For HTML files, uses a separate prompt that allows Claude to return
++    For HTML files, uses a separate prompt that allows the model to return
+     ``NO_UPDATE_NEEDED`` when the page content is already accurate.
+ 
+     Files are processed concurrently (up to 5 at a time) to reduce wall-clock
+     time when many pages need updating.
+ 
+     Returns one ``DocDraft`` per processed suggestion with the complete updated
+     file content ready for committing.  Drafts where ``error`` is set or
+     ``updated_content`` is empty should be discarded by the caller.
+     """
+-    from ai_reviewer.agents.anthropic_client import AnthropicClient  # local to avoid circular
++    from ai_reviewer.agents.deepseek_client import DeepSeekClient  # local to avoid circular
+ 
+     truncated_diff = diff[:_MAX_DIFF_CHARS] + ("…" if len(diff) > _MAX_DIFF_CHARS else "")
+     candidates = [s for s in suggestions if not s.file.endswith("/")][:max_files]
++    # Fall back to the configured default model when the caller omits it.
++    effective_model = model or deepseek_cfg.default_model
+ 
+-    async with AnthropicClient(anthropic_cfg) as client:
++    async with DeepSeekClient(deepseek_cfg) as client:
+         semaphore = asyncio.Semaphore(5)
+ 
+         async def _process_one(suggestion: DocSuggestion) -> DocDraft | None:
+             async with semaphore:
+                 is_html = suggestion.file.lower().endswith(".html")
+                 max_chars = _MAX_DOC_CHARS_HTML if is_html else _MAX_DOC_CHARS
+                 system_prompt = _DOC_DRAFT_SYSTEM_HTML if is_html else _DOC_DRAFT_SYSTEM
+ 
+@@ -458,24 +460,24 @@ async def generate_doc_drafts(
+                         f"{truncated_doc}\n\n"
+                         f"## Code Diff\n\n{truncated_diff}\n\n"
+                         f"## Why This File Needs Updating\n\n{suggestion.reason}\n\n"
+                         "Return the complete updated file content."
+                     )
+ 
+                 try:
+                     result = await client.run_completion(
+-                        model=model,
++                        model=effective_model,
+                         system=system_prompt,
+                         user=user_prompt,
+                         max_tokens=8192,
+                     )
+                     content = result.strip()
+                     if content == _NO_UPDATE_SENTINEL:
+-                        return None  # Claude says no update needed
++                        return None  # model says no update needed
+                     return DocDraft(suggestion=suggestion, updated_content=content)
+                 except Exception as exc:
+                     return DocDraft(suggestion=suggestion, updated_content="", error=str(exc))
+ 
+         raw_results = await asyncio.gather(*[_process_one(s) for s in candidates])
+ 
+     return [r for r in raw_results if r is not None]
+ 
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/docs/updater.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/docs/updater.py"
+index 21763b7..70efea5 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/docs/updater.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/docs/updater.py"
+@@ -6,17 +6,17 @@ and error handling.  All business logic lives here.
+ 
+ from __future__ import annotations
+ 
+ import logging
+ from dataclasses import dataclass, field
+ from typing import TYPE_CHECKING
+ 
+ if TYPE_CHECKING:
+-    from ai_reviewer.config import AnthropicApiConfig, DocGenerationSettings
++    from ai_reviewer.config import DeepSeekApiConfig, DocGenerationSettings
+     from ai_reviewer.docs.analyzer import DocDraft, DocSuggestion
+     from ai_reviewer.github.client import GitHubClient
+ 
+ logger = logging.getLogger(__name__)
+ 
+ 
+ @dataclass
+ class DocUpdateResult:
+@@ -43,17 +43,17 @@ def _build_pr_body(pr_number: int, pr_html_url: str, successful: list[DocDraft])
+     )
+ 
+ 
+ async def run_doc_update(
+     *,
+     repo: str,
+     pr_number: int,
+     gh: GitHubClient,
+-    anthropic_cfg: AnthropicApiConfig,
++    deepseek_cfg: DeepSeekApiConfig,
+     doc_generation: DocGenerationSettings,
+     base: str | None = None,
+     dry_run: bool = False,
+ ) -> DocUpdateResult:
+     """Detect stale docs, generate AI updates, and optionally open a PR.
+ 
+     Returns a :class:`DocUpdateResult`.  When *dry_run* is ``True`` the PR
+     creation step is skipped — ``result.pr_url`` will be ``None`` and
+@@ -141,17 +141,17 @@ async def run_doc_update(
+         return DocUpdateResult(skipped=True, skip_reason="no stale documentation detected")
+ 
+     diff = gh.get_pr_diff(pr)
+     drafts = await generate_doc_drafts(
+         suggestions=all_suggestions,
+         diff=diff,
+         repo_name=repo,
+         ref=ref,
+-        anthropic_cfg=anthropic_cfg,
++        deepseek_cfg=deepseek_cfg,
+         gh=gh,
+         model=effective_model,
+         max_files=effective_max_files,
+     )
+ 
+     successful = [d for d in drafts if d.updated_content and not d.error]
+     failed = [d for d in drafts if d.error]
+ 
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/github/webhook.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/github/webhook.py"
+index 9280033..f8385e6 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/github/webhook.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/github/webhook.py"
+@@ -133,60 +133,60 @@ def _get_github_app_token(app_id: str, private_key: str, repo: str) -> str | Non
+ 
+ def _setup_default_review_handler() -> None:
+     """Set up the default review handler using environment config.
+ 
+     This is used when running as a standalone server (e.g., Cloud Run)
+     without the CLI's explicit handler setup.
+     """
+     from ai_reviewer.cli import _run_doc_review
+-    from ai_reviewer.config import AnthropicApiConfig, Config, GitHubConfig, load_config
++    from ai_reviewer.config import DeepSeekApiConfig, Config, GitHubConfig, load_config
+     from ai_reviewer.github.client import (
+         GitHubClient,
+         ReviewMeta,
+         estimate_review_count,
+         lgtm_placeholder_review,
+         should_skip_before_agents,
+         should_skip_review,
+     )
+     from ai_reviewer.github.formatter import GitHubFormatter
+     from ai_reviewer.review import review_pr
+ 
+     async def default_review_handler(repo: str, pr_number: int) -> None:
+         """Default review handler that reads config from environment."""
+-        anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
++        deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY")
+ 
+         # Support both GitHub App and PAT authentication
+         github_app_id = os.environ.get("GITHUB_APP_ID")
+         github_app_private_key = os.environ.get("GITHUB_APP_PRIVATE_KEY")
+         github_token = os.environ.get("GITHUB_TOKEN")
+ 
+         # If GitHub App is configured, generate installation token
+         if github_app_id and github_app_private_key:
+             logger.info(f"Using GitHub App authentication for {repo}")
+             github_token = _get_github_app_token(github_app_id, github_app_private_key, repo)
+             if not github_token:
+                 logger.error("Failed to get GitHub App installation token")
+                 return
+ 
+-        if not anthropic_api_key:
+-            logger.error("ANTHROPIC_API_KEY not set")
++        if not deepseek_api_key:
++            logger.error("DEEPSEEK_API_KEY not set")
+             return
+         if not github_token:
+             logger.error("GITHUB_TOKEN not set")
+             return
+ 
+-        anthropic_timeout = _get_env_int("ANTHROPIC_TIMEOUT", 300)
++        deepseek_timeout = _get_env_int("DEEPSEEK_TIMEOUT", 300)
+         num_agents = _get_env_int("NUM_AGENTS", 3)
+         min_agreement = _get_env_float("MIN_VALIDATION_AGREEMENT", 2 / 3)
+ 
+-        anthropic_cfg = AnthropicApiConfig(
+-            api_key=anthropic_api_key,
+-            base_url=os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
+-            timeout_seconds=anthropic_timeout,
++        deepseek_cfg = DeepSeekApiConfig(
++            api_key=deepseek_api_key,
++            base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
++            timeout_seconds=deepseek_timeout,
+         )
+ 
+         enable_cross_review = os.environ.get("ENABLE_CROSS_REVIEW", "true").lower() != "false"
+ 
+         try:
+             webhook_config = load_config()
+         except Exception as e:
+             logger.warning("Failed to load config file, using defaults: %s", e)
+@@ -229,17 +229,17 @@ def _setup_default_review_handler() -> None:
+                         "LGTM candidate for %s PR #%d — running 1-agent re-check",
+                         repo,
+                         pr_number,
+                     )
+                     try:
+                         recheck_review = await review_pr(
+                             repo=repo,
+                             pr_number=pr_number,
+-                            anthropic_cfg=anthropic_cfg,
++                            deepseek_cfg=deepseek_cfg,
+                             github_token=github_token,
+                             num_agents=1,
+                             enable_cross_review=False,
+                             min_validation_agreement=min_agreement,
+                             config=webhook_config,
+                         )
+                     except Exception as e:
+                         logger.warning(
+@@ -277,17 +277,17 @@ def _setup_default_review_handler() -> None:
+                             len(recheck_review.findings),
+                             repo,
+                             pr_number,
+                         )
+ 
+             review = await review_pr(
+                 repo=repo,
+                 pr_number=pr_number,
+-                anthropic_cfg=anthropic_cfg,
++                deepseek_cfg=deepseek_cfg,
+                 github_token=github_token,
+                 num_agents=num_agents,
+                 enable_cross_review=enable_cross_review,
+                 min_validation_agreement=min_agreement,
+                 config=webhook_config,
+             )
+ 
+             if review.all_agents_failed:
+@@ -382,17 +382,17 @@ def _setup_default_review_handler() -> None:
+                 resolved = gh.resolve_fixed_comments(pr, delta)
+                 logger.info(f"Resolved {resolved} comments")
+ 
+             _run_doc_review(
+                 gh=gh,
+                 pr=pr,
+                 repo=repo,
+                 config=webhook_config
+-                or Config(anthropic=None, github=GitHubConfig(token=""), agents=[]),
++                or Config(deepseek=None, github=GitHubConfig(token=""), agents=[]),
+                 doc_check=None,
+                 dry_run=False,
+             )
+ 
+         except Exception as e:
+             logger.exception(f"Error reviewing {repo} PR #{pr_number}: {e}")
+ 
+     set_review_handler(default_review_handler)
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/review.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/review.py"
+index dc0eccd..96564e0 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/review.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/review.py"
+@@ -1,9 +1,9 @@
+-"""Main review flow using Anthropic Messages API with multi-agent support.
++"""Main review flow using DeepSeek chat completions API with multi-agent support.
+ 
+ Review standard (embedded in prompts):
+ - Favor approving when the CL improves overall code health; no perfectionism.
+ - Use severity nitpick and prefix "Nit: " for optional/style points.
+ - Comment on the code not the author; be courteous; explain why when asking for a change.
+ 
+ What to look for (order of impact): Design → Functionality → Complexity → Tests
+ → Naming, comments (why not what), style, consistency, documentation.
+@@ -23,22 +23,22 @@ import re
+ from collections import defaultdict
+ from collections.abc import Callable
+ from copy import deepcopy
+ from datetime import datetime
+ from difflib import SequenceMatcher
+ from typing import Any
+ from uuid import uuid4
+ 
+-from ai_reviewer.agents.anthropic_client import AnthropicClient
++from ai_reviewer.agents.deepseek_client import DeepSeekClient
+ from ai_reviewer.agents.base import ReviewAgent
+ from ai_reviewer.agents.patterns import PatternsAgent, StyleAgent
+ from ai_reviewer.agents.performance import LogicAgent, PerformanceAgent
+ from ai_reviewer.agents.security import AuthenticationAgent, SecurityAgent
+-from ai_reviewer.config import AnthropicApiConfig
++from ai_reviewer.config import DeepSeekApiConfig
+ from ai_reviewer.context.builder import build_system_blocks, build_user_blocks
+ from ai_reviewer.context.fetch import build_repo_map, fetch_conventions
+ from ai_reviewer.context.neighbors import select_neighbors
+ from ai_reviewer.github.client import GitHubClient
+ from ai_reviewer.models.context import ReviewContext
+ from ai_reviewer.models.findings import Category, ConsolidatedFinding, ReviewFinding, Severity
+ from ai_reviewer.models.review import AgentReview, ConsolidatedReview, ScoreBreakdown
+ from ai_reviewer.security.scanner import scan_for_secrets
+@@ -980,17 +980,17 @@ def _review_finding_to_dict(f: ReviewFinding) -> dict[str, Any]:
+ 
+ 
+ async def _prepare_shared_context(
+     session: ReviewSession,
+     gh: GitHubClient,
+     pr: Any,
+     diff: str,
+     changed_file_contents: dict[str, str],
+-    anthropic_cfg: AnthropicApiConfig,
++    deepseek_cfg: DeepSeekApiConfig,
+ ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+     """Fetch conventions + repo map + neighbors and build system/user blocks."""
+     import base64 as _b64
+ 
+     conventions = fetch_conventions(session, gh, CONVENTION_PATHS)
+     repo_map = build_repo_map(session, gh)
+ 
+     tree = session.cached_tree() or []
+@@ -1016,18 +1016,18 @@ async def _prepare_shared_context(
+             neighbors[path] = cached
+             continue
+         try:
+             session.consume_github_request()
+             contents = gh.get_file_contents(session.repo, path, ref=session.head_sha)
+             text = _b64.b64decode(getattr(contents, "content", "")).decode(
+                 "utf-8", errors="replace"
+             )
+-            if len(text) > anthropic_cfg.per_file_max_bytes:
+-                text = text[: anthropic_cfg.per_file_max_bytes] + "\n[truncated]"
++            if len(text) > deepseek_cfg.per_file_max_bytes:
++                text = text[: deepseek_cfg.per_file_max_bytes] + "\n[truncated]"
+             session.store_file(path, text)
+             neighbors[path] = text
+         except Exception as e:  # noqa: BLE001
+             logger.debug("Neighbor fetch failed %s: %s", path, e)
+ 
+     system_blocks = build_system_blocks(
+         agent_role=(
+             "You are a specialized code reviewer. Each agent has its own "
+@@ -1037,17 +1037,17 @@ async def _prepare_shared_context(
+         repo_map=repo_map,
+     )
+     user_blocks = build_user_blocks(
+         pr_title=getattr(pr, "title", "") or "",
+         pr_body=getattr(pr, "body", "") or "",
+         diff=diff,
+         changed_files=changed_file_contents,
+         neighbor_files=neighbors,
+-        max_total_chars=anthropic_cfg.max_combined_context_tokens * 4,
++        max_total_chars=deepseek_cfg.max_combined_context_tokens * 4,
+     )
+     return system_blocks, user_blocks
+ 
+ 
+ async def _run_agent_safe(
+     agent: ReviewAgent,
+     context: ReviewContext,
+     on_status: Callable[..., Any] | None,
+@@ -1064,72 +1064,75 @@ async def _run_agent_safe(
+     except Exception as e:  # noqa: BLE001
+         logger.exception("Agent %s failed", name)
+         if on_status:
+             on_status(f"{name}: FAILED")
+         return e
+ 
+ 
+ async def _run_single_cross_agent(
+-    client: AnthropicClient,
++    client: DeepSeekClient,
+     cross_prompt: str,
+     agent_name: str,
++    model: str,
+     on_status: Callable[..., Any] | None,
+ ) -> tuple[str, list[dict[str, Any]] | None]:
+     """Run one cross-review agent and return (name, assessments) or (name, None)."""
+     try:
+         if on_status:
+             on_status(f"Cross-review: {agent_name}")
+-        response = await client._sdk.messages.create(
+-            model="claude-sonnet-4-6",
+-            system=[
+-                {
+-                    "type": "text",
+-                    "text": "You are a code review validator. Respond with valid JSON.",
+-                }
+-            ],
+-            messages=[{"role": "user", "content": cross_prompt}],
++        raw_text = await client.run_completion(
++            model=model,
++            system="You are a code review validator. Respond with valid JSON.",
++            user=cross_prompt,
+             max_tokens=8192,
+             temperature=0.2,
+         )
+-        raw_text = ""
+-        for block in getattr(response, "content", []) or []:
+-            if getattr(block, "type", None) == "text":
+-                raw_text += getattr(block, "text", "")
+         assessments, _ = parse_cross_review_response(raw_text)
+         return (agent_name, assessments)
+     except Exception as e:  # noqa: BLE001
+         logger.warning("Cross-review agent %s failed: %s", agent_name, e)
+         return (agent_name, None)
+ 
+ 
+ async def run_cross_review_round(
+     *,
+-    client: AnthropicClient,
++    client: DeepSeekClient,
+     review: ConsolidatedReview,
+     context: ReviewContext,
+     diff: str,
+     agents_to_run: list[dict],
++    model: str | None = None,
+     on_status: Callable[..., Any] | None = None,
+     **_kwargs: Any,
+ ) -> list[tuple[str, list[dict[str, Any]]]]:
+     """Cross-review round: each agent validates and ranks findings.
+ 
+     Uses get_cross_review_prompt + get_cross_review_output_format to produce
+     the {id, valid, rank} assessment format that apply_cross_review expects.
++    ``model`` defaults to the configured ``deepseek.default_model``.
+     """
+     if not review.findings:
+         return []
+ 
++    # Resolve the fallback model once. ``deepseek_cfg`` arrives via **kwargs.
++    _ds_cfg = _kwargs.get("deepseek_cfg")
++    fallback_model: str = (
++        getattr(_ds_cfg, "default_model", "deepseek-v4-pro")
++        if _ds_cfg is not None
++        else "deepseek-v4-pro"
++    )
++
+     cross_prompt = get_cross_review_prompt(context, review, diff) + get_cross_review_output_format()
+     tasks = [
+         _run_single_cross_agent(
+             client=client,
+             cross_prompt=cross_prompt,
+             agent_name=str(cfg.get("name") if isinstance(cfg, dict) else cfg),
++            model=model or fallback_model,
+             on_status=on_status,
+         )
+         for cfg in agents_to_run
+     ]
+     gathered = await asyncio.gather(*tasks)
+     return [
+         (name, assessments)
+         for name, assessments in gathered
+@@ -1147,35 +1150,30 @@ def _effective_agent_count(
+     elif total < 500:
+         return min(2, requested)
+     return requested
+ 
+ 
+ async def review_pr(
+     repo: str,
+     pr_number: int,
+-    anthropic_cfg: AnthropicApiConfig,
++    deepseek_cfg: DeepSeekApiConfig,
+     github_token: str,
+     on_status: Callable[..., Any] | None = None,
+     num_agents: int = 3,
+     enable_cross_review: bool = True,
+     min_validation_agreement: float = 2 / 3,
+     config: Any | None = None,
+ ) -> ConsolidatedReview:
+-    """Review a PR using Anthropic Messages API agents.
+-
+-    Function name is retained for backward compatibility with existing
+-    callers and test patches; the implementation now uses the official
+-    Anthropic SDK (see docs/superpowers/specs/2026-04-15-anthropic-
+-    messages-migration-design.md).
++    """Review a PR using DeepSeek chat completions agents.
+ 
+     Args:
+         repo: Repository in "owner/name" format
+         pr_number: Pull request number
+-        anthropic_cfg: Anthropic API configuration
++        deepseek_cfg: DeepSeek API configuration
+         github_token: GitHub token for PR access
+         on_status: Optional callback for status updates
+         num_agents: Number of agents to run (1-5)
+         enable_cross_review: If True and num_agents > 1, run a second round where
+             agents validate and rank findings; drop low-agreement and re-order by rank.
+         min_validation_agreement: Fraction of assessing agents that must mark a finding valid.
+         config: Optional Config object; used for aggregator confidence thresholds and
+             review_policy.secret_scan_exclude.
+@@ -1250,27 +1248,27 @@ async def review_pr(
+     agents_to_run = [{"name": n} for n in agent_order]
+ 
+     # When a single agent runs, it must cover ALL perspectives (not just security).
+     _single_agent_comprehensive = num_agents == 1
+ 
+     session = ReviewSession(
+         repo=repo,
+         head_sha=pr.head.sha,
+-        github_budget=anthropic_cfg.per_review_github_request_budget,
++        github_budget=deepseek_cfg.per_review_github_request_budget,
+     )
+ 
+-    async with AnthropicClient(anthropic_cfg) as client:
++    async with DeepSeekClient(deepseek_cfg) as client:
+         system_blocks, user_blocks = await _prepare_shared_context(
+             session=session,
+             gh=gh,
+             pr=pr,
+             diff=diff,
+             changed_file_contents=files,
+-            anthropic_cfg=anthropic_cfg,
++            deepseek_cfg=deepseek_cfg,
+         )
+ 
+         if on_status:
+             on_status("CREATING")
+ 
+         tasks: list[Any] = []
+         instantiated: list[tuple[str, ReviewAgent]] = []
+         for i, agent_name in enumerate(agent_order):
+@@ -1284,17 +1282,17 @@ async def review_pr(
+             allow_tools = agent_cfg.allow_tool_use if agent_cfg else True
+             max_tool_calls = agent_cfg.max_tool_calls if agent_cfg else 20
+             registry = (
+                 ToolRegistry(
+                     session=session,
+                     github_client=gh,
+                     agent_id=f"{agent_name}-{i}",
+                     max_calls=max_tool_calls,
+-                    per_file_max_bytes=anthropic_cfg.per_file_max_bytes,
++                    per_file_max_bytes=deepseek_cfg.per_file_max_bytes,
+                 )
+                 if allow_tools
+                 else None
+             )
+             # When only 1 agent runs (small PR), override its system blocks
+             # with a comprehensive prompt covering ALL review perspectives.
+             agent_system = system_blocks
+             if _single_agent_comprehensive:
+@@ -1313,16 +1311,17 @@ async def review_pr(
+                 client=client,
+                 agent_id=f"{agent_name}-{i}",
+                 system_blocks=agent_system,
+                 user_blocks=user_blocks,
+                 tool_registry=registry,
+                 max_tokens=agent_cfg.max_tokens if agent_cfg else 8192,
+                 temperature=agent_cfg.temperature if agent_cfg else 0.3,
+                 thinking_enabled=agent_cfg.thinking_enabled if agent_cfg else None,
++                model=agent_cfg.model if agent_cfg else deepseek_cfg.default_model,
+             )
+             instantiated.append((agent_name, agent))
+             tasks.append(_run_agent_safe(agent, context, on_status))
+ 
+         agent_results = await asyncio.gather(*tasks)
+ 
+     all_findings: list[tuple[str, list[dict[str, Any]], str]] = []
+     for (agent_name, _agent), result in zip(instantiated, agent_results, strict=False):
+@@ -1354,27 +1353,27 @@ async def review_pr(
+     # Note: cross-review doubles API calls; disable with --no-cross-review for cost-sensitive use.
+     if enable_cross_review and num_agents > 1 and review.findings and not review.all_agents_failed:
+         # Only run cross-review with agents that succeeded in round 1
+         agents_for_cross = [c for c in agents_to_run if c["name"] not in review.failed_agents]
+         if not agents_for_cross:
+             logger.info("Skipping cross-review: no round-1 agents succeeded")
+         else:
+             logger.info("Running cross-review round (validate and rank findings)...")
+-            async with AnthropicClient(anthropic_cfg) as cross_client:
++            async with DeepSeekClient(deepseek_cfg) as cross_client:
+                 cross_results = await run_cross_review_round(
+                     client=cross_client,
+                     session=session,
+                     gh=gh,
+                     pr=pr,
+                     review=review,
+                     context=context,
+                     diff=diff,
+                     agents_to_run=agents_for_cross,
+-                    anthropic_cfg=anthropic_cfg,
++                    deepseek_cfg=deepseek_cfg,
+                     on_status=on_status,
+                 )
+             if cross_results:
+                 review = apply_cross_review(review, cross_results, min_validation_agreement)
+                 logger.info(f"Cross-review done: {len(review.findings)} findings after validation")
+ 
+     if secret_findings:
+         review.findings = secret_findings + review.findings
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/tools/__init__.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/tools/__init__.py"
+index da9d289..fe69e34 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/tools/__init__.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/tools/__init__.py"
+@@ -1 +1 @@
+-"""Tool implementations for Anthropic tool use."""
++"""Tool implementations for DeepSeek (OpenAI-compatible) function calling."""
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/tools/repo_tools.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/tools/repo_tools.py"
+index c5018fc..8ef0fb6 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/src/ai_reviewer/tools/repo_tools.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/src/ai_reviewer/tools/repo_tools.py"
+@@ -1,13 +1,13 @@
+ """Repo-exploration tools backed by GitHub Contents API.
+ 
+-Exposes read_file / glob / grep as Anthropic tools. All file access
+-is pinned to the PR head SHA and is read-only. Enforces per-agent
+-call budget and per-review GitHub request budget.
++Exposes read_file / glob / grep as OpenAI-style function tools. All
++file access is pinned to the PR head SHA and is read-only. Enforces
++per-agent call budget and per-review GitHub request budget.
+ """
+ 
+ from __future__ import annotations
+ 
+ import base64
+ import logging
+ import re
+ from pathlib import PurePosixPath
+@@ -20,64 +20,73 @@ logger = logging.getLogger(__name__)
+ 
+ 
+ class ToolQuotaExceeded(RuntimeError):
+     """Raised when an agent exceeds its tool-call budget."""
+ 
+ 
+ TOOL_SPECS: list[dict[str, Any]] = [
+     {
+-        "name": "read_file",
+-        "description": (
+-            "Read the full contents of a file at the PR's head commit. "
+-            "Prefer reading only files you specifically need. "
+-            "Cite path + line numbers in findings."
+-        ),
+-        "input_schema": {
+-            "type": "object",
+-            "properties": {
+-                "path": {"type": "string", "description": "Repo-relative path"},
++        "type": "function",
++        "function": {
++            "name": "read_file",
++            "description": (
++                "Read the full contents of a file at the PR's head commit. "
++                "Prefer reading only files you specifically need. "
++                "Cite path + line numbers in findings."
++            ),
++            "parameters": {
++                "type": "object",
++                "properties": {
++                    "path": {"type": "string", "description": "Repo-relative path"},
++                },
++                "required": ["path"],
+             },
+-            "required": ["path"],
+         },
+     },
+     {
+-        "name": "glob",
+-        "description": (
+-            "List repo paths matching a glob pattern (e.g., 'src/**/*.py'). "
+-            "Use this before read_file when you do not know the exact path."
+-        ),
+-        "input_schema": {
+-            "type": "object",
+-            "properties": {
+-                "pattern": {"type": "string"},
++        "type": "function",
++        "function": {
++            "name": "glob",
++            "description": (
++                "List repo paths matching a glob pattern (e.g., 'src/**/*.py'). "
++                "Use this before read_file when you do not know the exact path."
++            ),
++            "parameters": {
++                "type": "object",
++                "properties": {
++                    "pattern": {"type": "string"},
++                },
++                "required": ["pattern"],
+             },
+-            "required": ["pattern"],
+         },
+     },
+     {
+-        "name": "grep",
+-        "description": (
+-            "Regex search across repo paths. Prefer this over reading many "
+-            "files. Returns up to 100 matches with path and line numbers."
+-        ),
+-        "input_schema": {
+-            "type": "object",
+-            "properties": {
+-                "pattern": {"type": "string", "description": "Python regex"},
+-                "path_glob": {"type": "string", "description": "Glob to restrict search"},
++        "type": "function",
++        "function": {
++            "name": "grep",
++            "description": (
++                "Regex search across repo paths. Prefer this over reading many "
++                "files. Returns up to 100 matches with path and line numbers."
++            ),
++            "parameters": {
++                "type": "object",
++                "properties": {
++                    "pattern": {"type": "string", "description": "Python regex"},
++                    "path_glob": {"type": "string", "description": "Glob to restrict search"},
++                },
++                "required": ["pattern", "path_glob"],
+             },
+-            "required": ["pattern", "path_glob"],
+         },
+     },
+ ]
+ 
+ 
+ class ToolRegistry:
+-    """Dispatches Anthropic tool_use calls to real implementations."""
++    """Dispatches tool calls to real implementations."""
+ 
+     def __init__(
+         self,
+         session: ReviewSession,
+         github_client: GitHubClient,
+         agent_id: str,
+         max_calls: int,
+         per_file_max_bytes: int,
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/tests/integration/test_e2e_review.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/tests/integration/test_e2e_review.py"
+index 030e106..81e381c 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/tests/integration/test_e2e_review.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/tests/integration/test_e2e_review.py"
+@@ -1,12 +1,12 @@
+ """Opt-in end-to-end integration test.
+ 
+ Runs a real review against a pinned small public PR. Requires:
+-- ANTHROPIC_API_KEY env var
++- DEEPSEEK_API_KEY env var
+ - GITHUB_TOKEN env var (read-only ok)
+ 
+ Enable with: pytest -m integration
+ 
+ Before running, set PINNED_REPO and PINNED_PR below to a real PR.
+ """
+ 
+ from __future__ import annotations
+@@ -20,31 +20,31 @@ pytestmark = pytest.mark.integration
+ 
+ # Update these before running the integration test.
+ PINNED_REPO = "PLACEHOLDER-OWNER/PLACEHOLDER-REPO"
+ PINNED_PR = 1
+ 
+ 
+ @pytest.mark.asyncio
+ async def test_review_against_pinned_public_pr() -> None:
+-    if not os.environ.get("ANTHROPIC_API_KEY") or not os.environ.get("GITHUB_TOKEN"):
++    if not os.environ.get("DEEPSEEK_API_KEY") or not os.environ.get("GITHUB_TOKEN"):
+         pytest.skip("credentials not set")
+     if "PLACEHOLDER" in PINNED_REPO:
+         pytest.skip("pinned PR not configured")
+ 
+     from ai_reviewer.config import load_config
+     from ai_reviewer.review import review_pr
+ 
+     config = load_config()
+-    assert config.anthropic is not None and config.anthropic.api_key
++    assert config.deepseek is not None and config.deepseek.api_key
+ 
+     review = await review_pr(
+         repo=PINNED_REPO,
+         pr_number=PINNED_PR,
+-        anthropic_cfg=config.anthropic,
++        deepseek_cfg=config.deepseek,
+         github_token=os.environ["GITHUB_TOKEN"],
+         num_agents=2,
+         enable_cross_review=False,
+         config=config,
+     )
+ 
+     assert review is not None
+     assert isinstance(review.findings, list)
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/tests/test_base_agent.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/tests/test_base_agent.py"
+index 1021a6e..1b110d7 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/tests/test_base_agent.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/tests/test_base_agent.py"
+@@ -1,30 +1,30 @@
+ from unittest.mock import AsyncMock, MagicMock
+ 
+ import pytest
+ 
+-from ai_reviewer.agents.anthropic_client import AnthropicReviewResult, UsageStats
++from ai_reviewer.agents.deepseek_client import DeepSeekReviewResult, UsageStats
+ from ai_reviewer.agents.base import ReviewAgent
+ from ai_reviewer.models.context import ReviewContext
+ 
+ 
+ class DummyAgent(ReviewAgent):
+-    MODEL = "claude-opus-4-6"
++    MODEL = "deepseek-v4-pro"
+     AGENT_TYPE = "dummy"
+     FOCUS_AREAS = ["security"]
+     SYSTEM_PROMPT = "You are a dummy reviewer."
+     THINKING_ENABLED = True
+ 
+ 
+ @pytest.mark.asyncio
+-async def test_review_agent_uses_anthropic_client():
++async def test_review_agent_uses_deepseek_client():
+     client = MagicMock()
+     client.run_review = AsyncMock(
+-        return_value=AnthropicReviewResult(
++        return_value=DeepSeekReviewResult(
+             parsed={
+                 "findings": [
+                     {
+                         "file_path": "a.py",
+                         "line_start": 1,
+                         "severity": "warning",
+                         "category": "security",
+                         "title": "t",
+@@ -62,10 +62,10 @@ async def test_review_agent_uses_anthropic_client():
+     )
+     review = await agent.review(diff="d", file_contents={}, context=ctx)
+ 
+     assert review.agent_id == "dummy-1"
+     assert review.agent_type == "dummy"
+     assert len(review.findings) == 1
+     assert review.summary == "sum"
+     kwargs = client.run_review.call_args.kwargs
+-    assert kwargs["model"] == "claude-opus-4-6"
++    assert kwargs["model"] == "deepseek-v4-pro"
+     assert kwargs["enable_thinking"] is True
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/tests/test_cli.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/tests/test_cli.py"
+index 897cb66..07e05b7 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/tests/test_cli.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/tests/test_cli.py"
+@@ -137,21 +137,21 @@ class TestUpdateDocsCLI:
+         from ai_reviewer.cli import cli
+ 
+         runner = CliRunner()
+         with (
+             patch("ai_reviewer.cli.load_config") as mock_cfg,
+             patch("ai_reviewer.cli.validate_config", return_value=[]),
+             patch("ai_reviewer.cli.GitHubClient") as MockGH,
+         ):
+-            mock_cfg.return_value.anthropic.api_key = "sk-test"
+-            mock_cfg.return_value.anthropic = MagicMock(api_key="sk-test")
++            mock_cfg.return_value.deepseek.api_key = "sk-test"
++            mock_cfg.return_value.deepseek = MagicMock(api_key="sk-test")
+             mock_cfg.return_value.github.token = "ghp_test"
+             mock_cfg.return_value.doc_generation = MagicMock(
+-                model="claude-sonnet-4-6",
++                model="deepseek-v4-pro",
+                 max_files=15,
+                 static_docs_dirs=["docs/", "docs-static/"],
+                 pr_labels=["automated-docs"],
+                 pr_draft=True,
+             )
+ 
+             mock_pr = MagicMock()
+             mock_pr.base.ref = "main"
+@@ -173,38 +173,38 @@ class TestUpdateDocsCLI:
+ class TestDocGenerationSettings:
+     """Tests for DocGenerationSettings config."""
+ 
+     def test_defaults(self):
+         from ai_reviewer.config import DocGenerationSettings
+ 
+         s = DocGenerationSettings()
+         assert s.enabled is False
+-        assert s.model == "claude-sonnet-4-6"
++        assert s.model == "deepseek-v4-pro"
+         assert s.max_files == 15
+         assert "docs/" in s.static_docs_dirs
+         assert "docs-static/" in s.static_docs_dirs
+         assert s.pr_draft is True
+         assert "automated-docs" in s.pr_labels
+ 
+     def test_parsed_from_config(self):
+         from ai_reviewer.config import _parse_config
+ 
+         cfg = _parse_config(
+             {
+-                "anthropic": {"api_key": "sk-test"},
++                "deepseek": {"api_key": "sk-test"},
+                 "github": {"token": "ghp_test"},
+                 "doc_generation": {
+                     "enabled": True,
+-                    "model": "claude-opus-4-6",
++                    "model": "deepseek-v4-pro",
+                     "max_files": 3,
+                 },
+             }
+         )
+         assert cfg.doc_generation.enabled is True
+-        assert cfg.doc_generation.model == "claude-opus-4-6"
++        assert cfg.doc_generation.model == "deepseek-v4-pro"
+         assert cfg.doc_generation.max_files == 3
+ 
+     def test_disabled_by_default_in_parsed_config(self):
+         from ai_reviewer.config import _parse_config
+ 
+-        cfg = _parse_config({"anthropic": {"api_key": "sk-test"}, "github": {"token": "ghp_test"}})
++        cfg = _parse_config({"deepseek": {"api_key": "sk-test"}, "github": {"token": "ghp_test"}})
+         assert cfg.doc_generation.enabled is False
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/tests/test_config.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/tests/test_config.py"
+index bfc0812..983984b 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/tests/test_config.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/tests/test_config.py"
+@@ -1,39 +1,39 @@
+ """Config loading tests."""
+ 
+ import textwrap
+ from pathlib import Path
+ 
+ from ai_reviewer.config import load_config
+ 
+ 
+-def test_load_anthropic_config(tmp_path: Path, monkeypatch):
+-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-123")
++def test_load_deepseek_config(tmp_path: Path, monkeypatch):
++    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test-123")
+     monkeypatch.setenv("GITHUB_TOKEN", "gh-test")
+     cfg_file = tmp_path / "config.yaml"
+     cfg_file.write_text(
+         textwrap.dedent("""
+-        anthropic:
+-          api_key: ${ANTHROPIC_API_KEY}
+-          default_model: claude-opus-4-6
+-          enable_prompt_caching: true
++        deepseek:
++          api_key: ${DEEPSEEK_API_KEY}
++          default_model: deepseek-v4-pro
++          enable_prompt_caching: false
+         github:
+           token: ${GITHUB_TOKEN}
+         agents:
+           - name: security-reviewer
+-            model: claude-opus-4-6
++            model: deepseek-v4-pro
+             focus_areas: [security]
+             thinking_enabled: true
+             thinking_budget_tokens: 8192
+             allow_tool_use: true
+             max_tool_calls: 20
+     """)
+     )
+     cfg = load_config(cfg_file)
+-    assert cfg.anthropic is not None
+-    assert cfg.anthropic.api_key == "sk-test-123"
+-    assert cfg.anthropic.default_model == "claude-opus-4-6"
+-    assert cfg.anthropic.enable_prompt_caching is True
++    assert cfg.deepseek is not None
++    assert cfg.deepseek.api_key == "sk-test-123"
++    assert cfg.deepseek.default_model == "deepseek-v4-pro"
++    assert cfg.deepseek.enable_prompt_caching is False
+     assert cfg.agents[0].thinking_enabled is True
+     assert cfg.agents[0].thinking_budget_tokens == 8192
+     assert cfg.agents[0].allow_tool_use is True
+     assert cfg.agents[0].max_tool_calls == 20
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/tests/test_convergence.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/tests/test_convergence.py"
+index 8cb0d72..025d258 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/tests/test_convergence.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/tests/test_convergence.py"
+@@ -531,17 +531,17 @@ class TestWebhookConvergenceGate:
+         mock_gh = MagicMock()
+         mock_gh.get_pull_request.return_value = mock_pr
+         mock_gh.compute_review_delta.return_value = converged_delta
+         mock_gh.get_review_metadata.return_value = None
+ 
+         with (
+             patch.dict(
+                 "os.environ",
+-                {"ANTHROPIC_API_KEY": "test", "GITHUB_TOKEN": "test"},
++                {"DEEPSEEK_API_KEY": "test", "GITHUB_TOKEN": "test"},
+             ),
+             patch("ai_reviewer.config.load_config"),
+             patch(
+                 "ai_reviewer.review.review_pr",
+                 return_value=review,
+             ),
+             patch("ai_reviewer.github.client.GitHubClient", return_value=mock_gh),
+             patch("ai_reviewer.github.formatter.GitHubFormatter"),
+@@ -593,17 +593,17 @@ class TestWebhookConvergenceGate:
+         mock_gh = MagicMock()
+         mock_gh.get_pull_request.return_value = mock_pr
+         mock_gh.compute_review_delta.return_value = non_converged_delta
+         mock_gh.get_review_metadata.return_value = None
+ 
+         with (
+             patch.dict(
+                 "os.environ",
+-                {"ANTHROPIC_API_KEY": "test", "GITHUB_TOKEN": "test"},
++                {"DEEPSEEK_API_KEY": "test", "GITHUB_TOKEN": "test"},
+             ),
+             patch("ai_reviewer.config.load_config"),
+             patch(
+                 "ai_reviewer.review.review_pr",
+                 return_value=review,
+             ),
+             patch("ai_reviewer.github.client.GitHubClient", return_value=mock_gh),
+             patch("ai_reviewer.github.formatter.GitHubFormatter"),
+@@ -654,17 +654,17 @@ class TestWebhookConvergenceGate:
+         mock_gh.compute_review_delta.return_value = delta
+         mock_gh.get_review_metadata.return_value = None
+         mock_gh.get_postable_inline_findings.return_value = []
+         mock_gh.post_review.side_effect = RuntimeError("post failed")
+ 
+         with (
+             patch.dict(
+                 "os.environ",
+-                {"ANTHROPIC_API_KEY": "test", "GITHUB_TOKEN": "test"},
++                {"DEEPSEEK_API_KEY": "test", "GITHUB_TOKEN": "test"},
+             ),
+             patch("ai_reviewer.config.load_config"),
+             patch(
+                 "ai_reviewer.review.review_pr",
+                 return_value=review,
+             ),
+             patch("ai_reviewer.github.client.GitHubClient", return_value=mock_gh),
+             patch("ai_reviewer.github.formatter.GitHubFormatter"),
+@@ -1604,17 +1604,17 @@ class TestLgtmLightweightRecheck:
+         mock_gh.get_review_metadata.return_value = meta
+         mock_gh.check_lgtm_fast_path.return_value = lgtm_delta
+         mock_gh.get_previous_review_comments.return_value = [_prev_comment()]
+ 
+         with (
+             patch.dict(
+                 "os.environ",
+                 {
+-                    "ANTHROPIC_API_KEY": "test",
++                    "DEEPSEEK_API_KEY": "test",
+                     "GITHUB_TOKEN": "test",
+                     "MIN_VALIDATION_AGREEMENT": "0.8",
+                 },
+             ),
+             patch("ai_reviewer.config.load_config"),
+             patch(
+                 "ai_reviewer.review.review_pr",
+                 return_value=recheck_review,
+@@ -1703,17 +1703,17 @@ class TestLgtmLightweightRecheck:
+         mock_gh.get_review_metadata.return_value = meta
+         mock_gh.check_lgtm_fast_path.return_value = lgtm_delta
+         mock_gh.compute_review_delta.return_value = normal_delta
+         mock_gh.get_previous_review_comments.return_value = [_prev_comment()]
+ 
+         with (
+             patch.dict(
+                 "os.environ",
+-                {"ANTHROPIC_API_KEY": "test", "GITHUB_TOKEN": "test"},
++                {"DEEPSEEK_API_KEY": "test", "GITHUB_TOKEN": "test"},
+             ),
+             patch("ai_reviewer.config.load_config"),
+             patch(
+                 "ai_reviewer.review.review_pr",
+                 new_callable=AsyncMock,
+                 side_effect=[recheck_review, full_review],
+             ) as mock_agent,
+             patch("ai_reviewer.github.client.GitHubClient", return_value=mock_gh),
+@@ -1782,17 +1782,17 @@ class TestLgtmLightweightRecheck:
+         mock_gh.get_review_metadata.return_value = meta
+         mock_gh.check_lgtm_fast_path.return_value = lgtm_delta
+         mock_gh.compute_review_delta.return_value = normal_delta
+         mock_gh.get_previous_review_comments.return_value = [_prev_comment()]
+ 
+         with (
+             patch.dict(
+                 "os.environ",
+-                {"ANTHROPIC_API_KEY": "test", "GITHUB_TOKEN": "test"},
++                {"DEEPSEEK_API_KEY": "test", "GITHUB_TOKEN": "test"},
+             ),
+             patch("ai_reviewer.config.load_config"),
+             patch(
+                 "ai_reviewer.review.review_pr",
+                 new_callable=AsyncMock,
+                 side_effect=[RuntimeError("recheck failed"), normal_review],
+             ) as mock_agent,
+             patch("ai_reviewer.github.client.GitHubClient", return_value=mock_gh),
+@@ -2236,17 +2236,17 @@ class TestWebhookCompactSummaryCounts:
+         mock_gh.get_review_metadata.return_value = None
+         mock_gh.compute_review_delta.return_value = delta
+         mock_gh.get_postable_inline_findings.return_value = postable_findings
+ 
+         with (
+             patch.dict(
+                 "os.environ",
+                 {
+-                    "ANTHROPIC_API_KEY": "test",
++                    "DEEPSEEK_API_KEY": "test",
+                     "GITHUB_TOKEN": "test",
+                 },
+             ),
+             patch("ai_reviewer.config.load_config"),
+             patch(
+                 "ai_reviewer.review.review_pr",
+                 return_value=review,
+             ),
+@@ -2493,17 +2493,17 @@ class TestSuppressedFindingsNotPosted:
+         mock_gh.get_pull_request.return_value = mock_pr
+         mock_gh.get_review_metadata.return_value = None
+         mock_gh.compute_review_delta.return_value = delta
+         mock_gh.get_postable_inline_findings.return_value = [new_f]
+ 
+         with (
+             patch.dict(
+                 "os.environ",
+-                {"ANTHROPIC_API_KEY": "test", "GITHUB_TOKEN": "test"},
++                {"DEEPSEEK_API_KEY": "test", "GITHUB_TOKEN": "test"},
+             ),
+             patch("ai_reviewer.config.load_config"),
+             patch(
+                 "ai_reviewer.review.review_pr",
+                 return_value=review,
+             ),
+             patch("ai_reviewer.github.client.GitHubClient", return_value=mock_gh),
+         ):
+diff --git "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/tests/test_doc_analyzer.py" "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/tests/test_doc_analyzer.py"
+index 60ac552..798a4b9 100644
+--- "a/D:\\Code\\SRP\\ai-code-reviewer-base-2afd063/tests/test_doc_analyzer.py"
++++ "b/D:\\Code\\SRP\\ai-coder-reviewer-master-Reimplement/tests/test_doc_analyzer.py"
+@@ -564,143 +564,143 @@ class TestDocDraft:
+ 
+         s = DocSuggestion(file="README.md", reason="needs update")
+         d = DocDraft(suggestion=s, updated_content="", error="file not found")
+         assert d.error == "file not found"
+         assert d.updated_content == ""
+ 
+ 
+ class TestGenerateDocDrafts:
+-    """Tests for generate_doc_drafts() — mocks AnthropicClient and GitHubClient."""
++    """Tests for generate_doc_drafts() — mocks DeepSeekClient and GitHubClient."""
+ 
+     @pytest.mark.asyncio
+     async def test_skips_directory_suggestions(self):
+         """Suggestions with a trailing '/' (directories) are skipped."""
+         from unittest.mock import AsyncMock, MagicMock, patch
+ 
+-        from ai_reviewer.config import AnthropicApiConfig
++        from ai_reviewer.config import DeepSeekApiConfig
+         from ai_reviewer.docs.analyzer import DocSuggestion, generate_doc_drafts
+ 
+         dir_suggestion = DocSuggestion(file="architecture/", reason="missing folder")
+         mock_gh = MagicMock()
+ 
+-        with patch("ai_reviewer.agents.anthropic_client.AnthropicClient") as MockClient:
++        with patch("ai_reviewer.agents.deepseek_client.DeepSeekClient") as MockClient:
+             mock_instance = AsyncMock()
+             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_instance)
+             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+ 
+-            cfg = AnthropicApiConfig(api_key="sk-test")
++            cfg = DeepSeekApiConfig(api_key="sk-test")
+             drafts = await generate_doc_drafts(
+                 suggestions=[dir_suggestion],
+                 diff="some diff",
+                 repo_name="org/repo",
+                 ref="abc123",
+-                anthropic_cfg=cfg,
++                deepseek_cfg=cfg,
+                 gh=mock_gh,
+             )
+ 
+         assert drafts == []
+         mock_instance.run_completion.assert_not_called()
+ 
+     @pytest.mark.asyncio
+     async def test_generates_draft_for_file_suggestion(self):
+         """A file suggestion produces a DocDraft with updated_content."""
+         from unittest.mock import AsyncMock, MagicMock, patch
+ 
+-        from ai_reviewer.config import AnthropicApiConfig
++        from ai_reviewer.config import DeepSeekApiConfig
+         from ai_reviewer.docs.analyzer import DocSuggestion, generate_doc_drafts
+ 
+         suggestion = DocSuggestion(file="README.md", reason="cli.py changed")
+         mock_file_content = MagicMock()
+         mock_file_content.decoded_content = b"# Old README\n"
+ 
+         mock_gh = MagicMock()
+         mock_gh.get_file_contents.return_value = mock_file_content
+ 
+-        with patch("ai_reviewer.agents.anthropic_client.AnthropicClient") as MockClient:
++        with patch("ai_reviewer.agents.deepseek_client.DeepSeekClient") as MockClient:
+             mock_instance = AsyncMock()
+             mock_instance.run_completion = AsyncMock(return_value="# Updated README\n")
+             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_instance)
+             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+ 
+-            cfg = AnthropicApiConfig(api_key="sk-test")
++            cfg = DeepSeekApiConfig(api_key="sk-test")
+             drafts = await generate_doc_drafts(
+                 suggestions=[suggestion],
+                 diff="diff --git a/src/cli.py...",
+                 repo_name="org/repo",
+                 ref="abc123",
+-                anthropic_cfg=cfg,
++                deepseek_cfg=cfg,
+                 gh=mock_gh,
+             )
+ 
+         assert len(drafts) == 1
+         assert drafts[0].updated_content == "# Updated README"  # strip() removes trailing \n
+         assert drafts[0].error is None
+         assert drafts[0].suggestion is suggestion
+ 
+     @pytest.mark.asyncio
+     async def test_handles_file_fetch_error(self):
+         """If fetching the current file fails, draft has error set."""
+         from unittest.mock import AsyncMock, MagicMock, patch
+ 
+-        from ai_reviewer.config import AnthropicApiConfig
++        from ai_reviewer.config import DeepSeekApiConfig
+         from ai_reviewer.docs.analyzer import DocSuggestion, generate_doc_drafts
+ 
+         suggestion = DocSuggestion(file="docs/api.md", reason="api changed")
+         mock_gh = MagicMock()
+         mock_gh.get_file_contents.side_effect = Exception("404 not found")
+ 
+-        with patch("ai_reviewer.agents.anthropic_client.AnthropicClient") as MockClient:
++        with patch("ai_reviewer.agents.deepseek_client.DeepSeekClient") as MockClient:
+             mock_instance = AsyncMock()
+             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_instance)
+             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+ 
+-            cfg = AnthropicApiConfig(api_key="sk-test")
++            cfg = DeepSeekApiConfig(api_key="sk-test")
+             drafts = await generate_doc_drafts(
+                 suggestions=[suggestion],
+                 diff="diff",
+                 repo_name="org/repo",
+                 ref="abc123",
+-                anthropic_cfg=cfg,
++                deepseek_cfg=cfg,
+                 gh=mock_gh,
+             )
+ 
+         assert len(drafts) == 1
+         assert drafts[0].error == "404 not found"
+         assert drafts[0].updated_content == ""
+         mock_instance.run_completion.assert_not_called()
+ 
+     @pytest.mark.asyncio
+     async def test_respects_max_files(self):
+         """max_files caps how many suggestions are processed."""
+         from unittest.mock import AsyncMock, MagicMock, patch
+ 
+-        from ai_reviewer.config import AnthropicApiConfig
++        from ai_reviewer.config import DeepSeekApiConfig
+         from ai_reviewer.docs.analyzer import DocSuggestion, generate_doc_drafts
+ 
+         suggestions = [DocSuggestion(file=f"docs/file{i}.md", reason="changed") for i in range(5)]
+         mock_file_content = MagicMock()
+         mock_file_content.decoded_content = b"content"
+ 
+         mock_gh = MagicMock()
+         mock_gh.get_file_contents.return_value = mock_file_content
+ 
+-        with patch("ai_reviewer.agents.anthropic_client.AnthropicClient") as MockClient:
++        with patch("ai_reviewer.agents.deepseek_client.DeepSeekClient") as MockClient:
+             mock_instance = AsyncMock()
+             mock_instance.run_completion = AsyncMock(return_value="updated")
+             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_instance)
+             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+ 
+-            cfg = AnthropicApiConfig(api_key="sk-test")
++            cfg = DeepSeekApiConfig(api_key="sk-test")
+             drafts = await generate_doc_drafts(
+                 suggestions=suggestions,
+                 diff="diff",
+                 repo_name="org/repo",
+                 ref="abc123",
+-                anthropic_cfg=cfg,
++                deepseek_cfg=cfg,
+                 gh=mock_gh,
+                 max_files=2,
+             )
+ 
+         assert len(drafts) == 2
+         assert mock_instance.run_completion.call_count == 2
+ 
+ 

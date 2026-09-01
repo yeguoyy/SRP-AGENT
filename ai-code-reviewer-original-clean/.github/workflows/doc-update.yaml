@@ -1,0 +1,128 @@
+# Reusable workflow: AI-powered doc update PR generator.
+#
+# How other repos call this (add to their .github/workflows/doc-update.yaml):
+#
+#   on:
+#     push:
+#       branches: [main, master]
+#   jobs:
+#     doc-update:
+#       uses: calimero-network/ai-code-reviewer/.github/workflows/doc-update.yaml@main
+#       secrets:
+#         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+#         GH_PAT: ${{ secrets.GH_PAT }}
+#
+# Requirements in the calling repo:
+#   - .ai-reviewer.yaml with doc_generation.enabled: true and source_to_docs_mapping
+#   - ANTHROPIC_API_KEY secret
+#   - GH_PAT secret (Classic PAT with repo scope — needed to open PRs)
+
+name: Doc Auto-Update
+
+on:
+  workflow_call:
+    inputs:
+      dry_run:
+        description: "Print what would change without opening a PR"
+        type: boolean
+        default: false
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: true
+      GH_PAT:
+        required: false
+
+  # Dogfooding on push is off while the Anthropic balance is empty: the job spends
+  # credit on every merge to master and fails when there is none. Calling repos are
+  # unaffected - they trigger through workflow_call above.
+
+  # Manual trigger with dry-run option for testing
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to generate docs for (leave blank to auto-detect)"
+        type: string
+        required: false
+      dry_run:
+        description: "Dry run: print changes without opening a PR"
+        type: boolean
+        default: false
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # `cache: pip` deliberately not set here. setup-python's pip cache
+      # requires a requirements.txt / pyproject.toml in the *calling*
+      # repository to derive a cache key, and this workflow is meant to
+      # be called from non-Python repos (Rust, Go, JS, …) that have
+      # neither file. Setting it unconditionally caused calling repos
+      # to fail at this step with: "No file matched to
+      # [**/requirements.txt or **/pyproject.toml]". The single
+      # `pip install ai-code-reviewer` below is fast enough on a cold
+      # cache; reintroducing cache support would require a guard like
+      # `cache: ${{ hashFiles('**/requirements.txt', '**/pyproject.toml') != '' && 'pip' || '' }}`.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ai-code-reviewer
+        run: |
+          # Install from local checkout when running inside this repo or any fork of it.
+          # git SHAs are content-addressed, so @<full-SHA> is already tamper-evident
+          # without needing --require-hashes (which is not supported for git+ installs).
+          if grep -q 'name = "ai-code-reviewer"' pyproject.toml 2>/dev/null; then
+            pip install .
+          else
+            pip install git+https://github.com/calimero-network/ai-code-reviewer.git@78514fe2453d3a1e95ba9b9bd6e16dc53095046b
+          fi
+
+      - name: Get merged PR number
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          PR_NUM_INPUT: ${{ github.event.inputs.pr_number }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          # Prefer explicit input (workflow_dispatch), then commit message, then gh CLI
+          # Commit message and input are passed via env (not interpolated into the
+          # script body) so quotes/backticks in either can't break bash parsing.
+          PR_NUM="$PR_NUM_INPUT"
+
+          if [ -z "$PR_NUM" ]; then
+            PR_NUM=$(printf '%s' "$COMMIT_MSG" | grep -oP '(?<=pull request #)\d+' | head -1 || true)
+          fi
+
+          if [ -z "$PR_NUM" ]; then
+            PR_NUM=$(gh pr list \
+              --repo "${{ github.repository }}" \
+              --state merged \
+              --base "${{ github.event.repository.default_branch }}" \
+              --limit 1 \
+              --json number \
+              -q '.[0].number' 2>/dev/null || true)
+          fi
+
+          echo "number=$PR_NUM" >> "$GITHUB_OUTPUT"
+
+      - name: Generate and open doc update PR
+        if: steps.pr.outputs.number != ''
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          DRY_RUN_FLAG=""
+          if [ "${{ inputs.dry_run || github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          ai-reviewer update-docs "${{ github.repository }}" "${{ steps.pr.outputs.number }}" $DRY_RUN_FLAG
+
+      - name: No PR detected
+        if: steps.pr.outputs.number == ''
+        run: echo "Could not detect a merged PR — skipping doc update."

@@ -1,0 +1,2237 @@
+AACR-Bench: Evaluating Automatic Code Review with Holistic
+Repository-Level Context
+Lei Zhang * 1 Yongda Yu* 1 Minghui Yu1 Xinxin Guo 1 Zhengqi Zhuang 1 Guoping Rong 1 Dong Shao 1
+Haifeng Shen 2 Hongyu Kuang 1 Zhengfeng Li 3 Boge Wang 3 Guoan Zhang 3 Bangyu Xiang 3 Xiaobin Xu 3
+Abstract
+High-quality evaluation benchmarks are pivotal
+for deploying Large Language Models (LLMs)
+in a certain applicaiton field. However, existing
+benchmarks on Automated Code Review (ACR)
+suffer from two critical limitations: first, the re-
+liance on noisy, incomplete ground truth derived
+from raw Pull Request (PR) comments, which
+constrains the scope of issue detection; second,
+the lack of multi-language support in repository-
+level contexts, which restricts the generalizabil-
+ity of evaluation results. To address these chal-
+lenges, we introduceAACR-Bench, a comprehen-
+sive benchmark that provides full cross-file con-
+text across multiple programming languages. Un-
+like traditional datasets,AACR-Benchemploys
+an “AI-assisted, Human expert-verified” annota-
+tion pipeline to uncover latent defects often over-
+looked in original PRs, resulting in a 285% in-
+crease in issue coverage. Extensive evaluations
+of mainstream LLMs onAACR-Benchreveal that
+previous assessments may have either misjudged
+or only partially captured model capabilities due
+to data limitations. Our work establishes a more
+rigorous standard for ACR evaluation and of-
+fers new insights on LLM based ACR, i.e., the
+granularity/level of context and the choice of re-
+trieval methods significantly impact ACR perfor-
+mance, and this influence varies depending on the
+LLM, programming language, and the LLM us-
+age paradigm e.g., whether an Agent architecture
+is employed. The code, data, and other artifacts
+of our evaluation set are available at Github1.
+1Software Insititute, Nanjing University, Nanjing, China
+2Southern Cross University, Gold Coast, Australia 3TRE, Al-
+ibaba Inc., Hangzhou, China. Correspondence to: Guoping Rong
+<ronggp@nju.edu.cn>, Zhengfeng Li <lizhengfeng.lzf@alibaba-
+inc.com>.
+Preprint. February 2, 2026.
+1https://github.com/alibaba/aacr-bench
+1. Introduction
+Nowadays, empowered by Large Language Models (LLMs),
+automated code review(ACR) technologies have been
+widely studied and adopted (Hou et al., 2024; Zhang et al.,
+2023). Leveraging the impressive comprehension capabil-
+ities of LLMs, researchers have explored various methods
+for the end-to-end generation of review comments, for ex-
+ample, the pre-training model schemes proposed by Tu-
+fano et al., the fine-tuning strategies that balance cost and
+performance (Lu et al., 2023), and the optimization mech-
+anisms based on reinforcement learning (Le et al., 2022).
+Recently, Agent-based code review systems have also begun
+to emerge (Guo et al., 2025b; Ren et al., 2025).
+The flourishing research and adoption in ACR has intensi-
+fied the need for credible benchmarks capable of compre-
+hensively evaluating their performance. However, current
+evaluation frameworks still suffer from critical limitations,
+which can be summarized into two main issues.
+• Incomplete Issue Annotation.In general, existing
+benchmarks directly use raw review comments from
+real-world historical PRs as the Ground Truth, result-
+ing in inherent limitations regarding issue coverage
+within the dataset (Liu et al., 2025; Khoshnoud et al.,
+2022). This, in turn, makes it impossible to authenti-
+cally and faithfully characterize a model’s ability to
+uncover potential issues in a real-world code review
+scenarios.
+• Restricted Context Scope.Many code defects are in-
+herently cross-file, requiring review systems to ac-
+cess repository-level context for accurate detection.
+Although some existing benchmarks do offer cross-
+file context awareness (Zeng et al., 2025; Guo et al.,
+2025a), they are predominantly limited to a single pro-
+gramming language, such as Python. This language-
+specific focus not only constrains the generalizability
+of evaluation findings but may also introduce struc-
+tural biases tied to the linguistic characteristics of that
+language. Consequently, such benchmarks fail to ade-
+quately represent the multilingual reality of contempo-
+rary software development.
+1
+arXiv:2601.19494v3  [cs.SE]  30 Jan 2026\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+These deficiencies collectively undermine the credibility and
+scope of current ACR evaluations, highlighting the necessity
+for a more comprehensive and crediable benchmark.
+To address the aforementioned challenges, we propose
+AACR-Bench—a multilingual ACR benchmark that sup-
+ports Repository-level Context-awareness. First, to address
+the limited issue annotation in existing datasets, we con-
+structed a high-quality hybrid corpus. Beyond collecting
+391 real-world review comments from GitHub PRs, we in-
+corporated extensive manual issue annotation: 80 senior
+software engineers (each with 2+ years of industry expe-
+rience) meticulously reviewed 2,145 comments generated
+by two ACR systems across six LLMs. This annotation
+strategy substantially improves issue coverage and enables
+AACR-Benchto more accurately and comprehensively as-
+sess a model’s capability to uncover latent issues compared
+to conventional datasets. Secondly, to address the issues
+of context and language diversity,AACR-Benchprovides
+complete repository-level dependency information while
+broadly covering 10 mainstream programming languages.
+The fullAACR-Benchdataset can be retrieved in the supple-
+mentary materials of this paper and will be open-sourced
+later on.
+Our main contributions are summarized as follows:
+• We combine multi-model generation and large-scale hu-
+man annotation to improve issue coverage so as to estab-
+lish a better groundtruth dataset.
+• We proposeAACR-Bench, the first multilingual,
+repository-level context-aware benchmark for LLM en-
+abled ACR tasks.
+• We conduct a comprehensive empirical evaluation of the
+mainstream LLMs withAACR-Benchand reveal new in-
+sights towards mainstream LLM’s ACR capabilities.
+2. Related Work
+We position this study by examining two key dimensions:
+the current state of large language model (LLM)-enabled
+ACR, and the evolving landscape of corresponding special-
+ized benchmark methodologies.
+2.1. Automatic Code Review Based on LLM
+Recent advances in LLMs have driven growing research in
+automated code review (ACR), with methods spanning sev-
+eral categories. Early work includes T5-based ACR (Tufano
+et al., 2022) and CodeReviewer (Li et al., 2022), pretrained
+on large diff–comment pairs. To improve efficiency, Llama-
+Reviewer (Lu et al., 2023) employed Parameter-Efficient
+Fine-Tuning, while Sun et al. introduced a “Data Flywheel”
+for continuous model evolution via iterative feedback (Sun
+et al., 2025; Yu et al., 2024a). Recent efforts align models
+with human preferences: Yu et al. (Yu et al., 2024b) used
+Kahneman–Tversky Optimization to enhance review util-
+ity, and Kapadnis et al. (Kapadnis et al., 2025) combined
+static analysis with Direct Preference Optimization to better
+detect latent defects. To address limited context, Zhang
+et al. (Zhang et al., 2025) applied Retrieval-Augmented
+Generation to incorporate project-level semantics. Further
+extending reasoning depth, agent-based frameworks employ
+multi-agent collaboration (Ren et al., 2025; Li et al., 2025;
+Sharanarthi & Polineni, 2025) and dialectical interactions
+such as debate (Tang et al., 2024) to produce more compre-
+hensive and objective reviews.
+2.2. Code Review Benchmarks
+Benchmarks are essential for defining the capability bound-
+aries of LLMs and guiding algorithmic evolution (Jimenez
+et al., 2023). In ACR, the rapid emergence of diverse
+methods underscores the need for a standardized bench-
+mark to systematically assess performance and guide fu-
+ture optimization. Currently, ACR benchmarking remains
+nascent, with efforts falling into two categories: accompany-
+ing datasets from individual studies and dedicated evaluation
+datasets. The most widely used accompanying dataset is
+CodeReviewer (Li et al., 2022), employed in many recent
+works (Lu et al., 2023; Yu et al., 2024a;b; Kapadnis et al.,
+2025; Ren et al., 2025; Li et al., 2025). However, it provides
+only diff-level code fragments and lacks repository-level
+context, which limits its realism relative to production en-
+vironments. A few studies (Sun et al., 2025; Sharanarthi
+& Polineni, 2025) forgo static datasets altogether, relying
+solely on live user feedback. Dedicated benchmarks in-
+clude SWR-Bench (Zeng et al., 2025) (derived from SWE-
+Bench’s 12 Python projects) and CodeFuse-CR-Bench (Guo
+et al., 2025a) (70 Python projects). While both offer full
+repository context, their exclusive focus on Python limits
+generalizability. ContextCRBench (Hu et al., 2025) im-
+proves language diversity (9 languages across 90 reposito-
+ries) but restricts context to the file level, preventing eval-
+uation of cross-file(i.e., repo-level) reasoning needed for
+complex defects.
+Motivated by the aforementioned landscape, this paper intro-
+duces the first multi-language with repository-level context
+ACR evaluation dataset, i.e,AACR-Bench, aiming to es-
+tablish a benchmark that more closely reflects real-world
+production environments.
+3. The AACR-Bench
+3.1. Overview of AACR-Bench
+AACR-Benchis a repository-level benchmark tailored for
+evaluating the end-to-end performance of ACR method-
+s/systems. Figure 1 show the overview ofAACR-Bench.
+2\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Figure 1.Overview of AACR-Bench.AACR-Benchcontains 200 PRs and 1,505 fine-grained review comments extracted and curated
+from50popular repositories, covering10mainstream programming languages.
+In general,AACR-Benchcontains 200 PRs and 1,505 fine-
+grained review comments extracted and curated from 50
+popular repositories, covering 10 mainstream program-
+ming languages. Besides,AACR-Benchincorporates a hy-
+brid of model-augmented human reviews and fully model-
+generated reviews, all of which have been rigorously veri-
+fied through human expert annotation to ensure benchmark
+credibility.
+Table 1.Context Range Categories of Review Comments
+Context level Description # Comment
+Diff Review comments that can be provided by
+looking solely at the current diff hunk
+754
+File Review comments that require the context of
+the entire file containing the diff hunk
+518
+Repo Review comments that require repository-
+wide context, including PR metadata and the
+contents of other files in the code base
+233
+To align with the diff-oriented paradigm of modern code
+review,AACR-Benchdesignates each PR as an evaluation
+unit. During execution, the ACR method under assessment
+traverses alldiffHunks within a PR to generate review
+comments. Performance is evaluated by matching these
+generated comments against the Ground Truth (comprising
+1,505 items) and calculating specific accuracy metrics(e.g.,
+Precision,RecallandF1-score.)
+3.2. Dataset Curation
+Figure 2.Distribution of Review Comments inAACR-Bench
+.TS, JS, and Py stand for TypeScript, JavaScript, and Python,
+respectively. “Aug” denotes comments augmented from original
+PR reviews, while “Gen” denotes comments generated by the 6
+LLMs.
+As discussed in Section 1, existing benchmarks suffer from
+single-language confinement and incomplete ground truth
+derived solely from historical PR data. To bridge these gaps,
+we constructedAACR-Bencha multilingual, repository-
+level benchmark. Core considerations and treatments are
+3\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+listed as below:
+Selection of programming languages and repositories
+To ensure both the currency and diversity of our evalu-
+ation benchmark, we selected the top 10 programming
+languages based on the StackOverflow Developer Survey
+20252, namely:JavaScript,Python,TypeScript,Java,C#,
+C++,C,PHP,Go, andRust. For each language, we iden-
+tified candidate repositories on GitHub that ranked within
+the top 2,000 in terms of both newly acquired stars and
+closed PRs from December 1, 2024, to December 1, 2025.
+From this candidate pool, we selected the top 5 repositories
+with the highest number of new stars. Consequently, our
+final dataset comprises 50 repositories across these 10 dis-
+tinct languages (5 repositories per language), serving as the
+original source for extracting PRs and review comments.
+PR filtering and comment augmentationWith the ex-
+tracted PRs from 50 selected repositories, we discard com-
+ments that did not identify explicit issues. To ensure data
+quality, we applied five filtering criteria: (1) PR titles and
+descriptions must be in English; (2) changed lines of code
+must be ≤1,000 (aligning with Google’s code review prac-
+tice for effective review (Solmaz, 2025)); (3) the primary
+programming language of modified files must match the
+repository’s main language; (4) a PR must contain >2
+inline comments, including at least one adopted comment
+that led to code modification; (5) changes detached from
+the project’s business context or lacking semantic meaning
+were excluded. Finally, to ensure the representativeness and
+diversity of the benchmark, we applied stratified sampling
+to the filtered candidates based on the repository, PR prob-
+lem domain (Jimenez et al., 2023; Guo et al., 2025a), and
+change size, constructing a core dataset of 200 PRs. As code
+review often involves multi-turn dialogue, directly using raw
+comments may lose context or introduce noise. Focusing
+on the revision with the most inline comments per PR, we
+employed an LLM to perform deep semantic analysis on
+review threads. This allowed us to extract confirmed code
+defects from multi-turn interactions and reorganize them
+into “Augmented Review Comments.”
+Review completion and expert annotationTo ad-
+dress the Label Incompleteness stemming from the often
+under-reviewed nature of GitHub PRs (Bacchelli & Bird,
+2013), we leveraged LLMs to comprehensively supple-
+ment the review comments for each PR. We constructed
+a generation matrix comprising 6 mainstream open- and
+closed-source models(Claude-4.5-Sonnet, Qwen3-Coder-
+480B-A35B-Instruct (Team, 2025), GPT-5.2, Deepseek-
+V3.2 (DeepSeek-AI, 2025), GLM-4.7 (Team et al., 2025),
+Gemini-3-Pro) to mitigate single-model bias and ensure out-
+2https://survey.stackoverflow.co/2025/technology˚A
+Table 2.Comparisons between Existing Benchmarks and Ours
+Dataset Multi-
+Languages
+support
+Repo-level
+context
+support
+Source
+of review
+comments
+Context
+scope anno-
+tation
+CodeFuse-CR-
+Bench
+no yes Raw data no
+SWR-Bench no yes Raw data no
+ContextCRBench yes no Raw data no
+AACR-Bench
+(ours)
+yes yes LLM&Expert
+Augmented
+yes
+put diversity. Review comments were generated in parallel
+through two heterogeneous frameworks: an internal review
+system and the open-source agent, Claude Code. Follow-
+ing semantic de-duplication, the generated comments were
+merged with the augmented human reviews to form a can-
+didate set for human verification later on. The collection
+was subjected to rigorous human annotation by 80 senior
+software engineers, each with over two years of professional
+experience. Every comment was annotated by at least two
+annotators independently, with any discrepancies resolved
+through discussion by a six-member core team. Annotators
+validated the correctness of the comments and categorized
+the issue types(Sun et al., 2025). Distinguishing our work
+from existing benchmarks, we innovatively annotated the
+context level required to formulate each comment, enabling
+the assessment of detection difficulty across varying context
+dependencies. This step yielded a total of 1,505 review com-
+ments, including 391 augmented from original reviews and
+1,114 augmented by LLMs and human experts, represent-
+ing a 285% increase in issue coverage. Figure 2 illustrates
+the language distribution and the proportion of augmented
+human versus model-generated comments.
+3.3. Comparisions with Existing Datasets
+A brief comparison between existing ACR benchmarks and
+ours are shown in Table 2. Our benchmark distinguishes
+itself as the first to provide repository-level context within
+a multi-language environment, synthesizing the strengths
+of existing works. While Codefuse-CR-Bench (Guo et al.,
+2025a) and SWR-Bench (Zeng et al., 2025) offer repos-
+itory contexts, they are restricted to Python; conversely,
+multi-language datasets like ContextCRBench (Hu et al.,
+2025) and CodeReview (Li et al., 2022) are limited to file-,
+function- or even diff-level contexts. We bridge this gap by
+evaluating tools across 10 popular programming languages
+with comprehensive context, including PR metadata and
+complete code repositories.
+Furthermore, we address the noise and incompleteness inher-
+ent in raw GitHub data used by prior benchmarks (Guo et al.,
+2025a; Zeng et al., 2025; Hu et al., 2025; Li et al., 2022).
+Instead of relying on raw extraction, we employ a rigorous
+construction methodology: we use LLMs to augment tech-
+nical issues from human inputs and expand defect coverage
+4\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+using six advanced models (including Qwen3-Coder-480B,
+GPT-5.2, and Gemini-3-Pro). To ensure reliability, all com-
+ments—whether augmented or generated—are meticulously
+verified by a large-scale team consisting of 80 professional
+software engineers.
+Finally, beyond standard PR and comment labels (Guo et al.,
+2025a; Zeng et al., 2025; Hu et al., 2025), we innovatively
+annotate the required context scope for each review com-
+ment. This novel dimension enables a granular analysis of
+an ACR method’s capacity to detect issues dependent on
+varying context depths and scope.
+4. Experiments
+Our experiments are designed to validate impacts derived
+from the core novel features of the proposed dataset(AACR-
+Bench), i.e, multi-language support, repository-level context,
+and a more comprehensive level of defect exposure.
+4.1. Evaluation Settings
+ModelsWe selected the latest models from mainstream
+open-source providers and the most recent versions of major
+commercial large models. As the result, our experiment
+comprises three open-source models (Qwen3-Coder-480B-
+A35B-Instruct (Team, 2025), DeepSeek-V3.2 (DeepSeek-
+AI, 2025), GLM-4.7 (Team et al., 2025)) and two commer-
+cial models (GPT-5.2, Claude-4.5-Sonet). We evaluated
+all selected models using our complete dataset. For sim-
+plicity, Qwen3-Coder-480B-A35B-Instruct will be called
+Qwen-480B-Coder in the following contents.
+Context Retrival MethodOne distinctive feature of our
+dataset is the provision of repository-level contextual depen-
+dencies. However, different retrieval methods also signifi-
+cantly influence the model’s reasoning performance (Zhang
+et al.; Liu et al., 2023b). In this experiment, the following
+methods were adopted:
+•No context: Serves as a comparative basis.
+• BM25: A classic text similarity method (Robertson et al.,
+2009), also applied in a previous similar study (Guo et al.,
+2025a).
+• Embedding: As one of the current state-of-the-art
+(SOTA) models, Qwen3-Embedding-8B is adopted for
+vector similarity retrieval.
+• Agent-based approach: We selected Claude Code, a
+widely-used agent framework that supports code review.
+Additionally, it should be noted that for similarity-based
+retrieval methods, the number of retrieved code contexts was
+uniformly set to 3. In contrast, the Agent method allows
+the Claude Code framework to autonomously decide the
+number of contexts to retrieve. And in all cases (even with
+theNo contextapproach, the exactly same PR title and
+description were provided.
+MetricsWe evaluate the performance of various ACR
+approaches againstAACR-Benchusing the common three
+matrics, i.e.,Precision,RecallandF1-score.
+4.2. Main Results
+This section presents a comprehensive evaluation of diverse
+ACR methodologies and models on our benchmark. We
+specifically analyze the impact of context retrieval, model
+architectures, and agent frameworks on the overall qual-
+ity of generated reviews. It is important to note that both
+the current practical applications of ACR (Sadowski et al.,
+2015; Distefano et al., 2019) and prior research (Tao et al.,
+2012) consistently highlight the critical role of contextual
+dependency information in ACR. Therefore, all experiments
+in this paper are based on the assumption that this repre-
+sents the geneunin paradigm established for ACR. In short,
+unless serving as a comparative basis, we do not evaluate
+the performance of LLMs on ACR tasks without contextual
+information.
+4.2.1. ACRPERFORMANCE BENCHMARKED WITH A
+MORE SUFFICIENT EXPOSURE TO DEFECTS
+As evidenced by the experimental data in Table 3, Agent-
+based methods exhibit review performance that are distinctly
+divergent from non-Agent baselines. Meanwhile, introduc-
+ing contextual information does not always yield positive
+gains in ACR task performance.
+Comparison between Agent-based and traditional ap-
+proachesAgent-based methods (e.g., Claude Code) con-
+sistently generate substantially fewer review comments per
+patch (0.08∼0.15 ) compared to traditional approaches.
+For instance, Claude-4.5-Sonnet in Agent mode attains a
+Precision of 39.90%, far exceeding its 8.70% in “No con-
+text” mode, yet accompanied by a notably lower Recall of
+10.10%. This indicates that while Agents excel in precision-
+critical scenarios, they may overlook many potential de-
+fects—a tendency attributable to the “contextual tunnel
+vision” effect induced by their focused retrieval mecha-
+nism (Liu et al., 2023a). In contrast, traditional methods
+tend to produce an excess of comments (e.g., GPT-5.2 aver-
+ages 2.47 per patch), which can obscure meaningful insights
+amidst noise. Furthermore, the effectiveness of Agent-based
+methods exhibits strong model-specific dependency, a sensi-
+tivity not observed with other retrieval strategies. Although
+Claude-4.5-Sonnet achieves exceptional precision in Agent
+mode, other models do not show similar gains and may even
+experience performance degradation. For example, GPT-5.2,
+despite strong baseline performance in “no context” mode,
+suffers a sharp decline in Agent mode, with Precision falling
+to 9.90% and Recall dropping to 2.99%. This contrast sug-
+5\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Table 3.Performance Comparison (%) of Models Across Different ACR Methods
+Method Model Avg Comments Recall (%) Precision (%) F1 (%)
+Agent
+Claude-4.5-Sonnet 0.0890 10.10 39.90 16.12
+Deepseek-V3.2 0.1525 4.78 11.00 6.67
+GLM-4.7 0.1448 4.72 11.50 6.69
+GPT-5.2 0.1063 2.99 9.90 4.59
+Qwen-480B-Coder 0.1004 4.39 15.30 6.82
+Embedding
+Claude-4.5-Sonnet 1.8902 42.86 8.00 13.48
+Deepseek-V3.2 2.5230 36.35 5.10 8.94
+GLM-4.7 0.8657 26.98 11.00 15.63
+GPT-5.2 2.4709 47.24 6.70 11.74
+Qwen-480B-Coder 0.8335 24.25 10.20 14.36
+No context
+Claude-4.5-Sonnet 1.7220 42.86 8.70 14.46
+Deepseek-V3.2 2.2875 36.54 5.60 9.71
+GLM-4.7 0.8573 27.57 11.30 16.03
+GPT-5.2 2.3537 47.11 7.00 12.19
+Qwen-480B-Coder 1.0217 27.44 9.40 14.00
+BM25
+Claude-4.5-Sonnet 2.1698 35.75 5.80 9.98
+Deepseek-V3.2 0.8851 27.38 10.90 15.59
+GLM-4.7 0.9070 26.25 10.20 14.69
+GPT-5.2 1.7461 43.59 8.80 14.64
+Qwen-480B-Coder 2.3906 45.85 6.70 11.69
+gests that general-purpose model capabilities do not directly
+translate to proficiency in Agent-based ACR tasks (Liu et al.,
+2023c).
+Impact of context retrieval methodsTable 3 further indi-
+cates that context retrieval is not universally beneficial. For
+models with strong inherent reasoning, naive RAG can intro-
+duce harmful noise, while various open-source models show
+distinct preferences for specific retrieval strategies. For
+instance, Claude-4.5-Sonnet performs robustly in “no con-
+text” mode (F1=14.46). However, providing top-3 contexts
+via BM25 causes performance to drop sharply (F1= 9.98,
+a 31% decrease; Precision falls from 8.70% to 5.80%).
+Embedding-based retrieval similarly degrades its results.
+Different models favor different strategies. DeepSeek-V3.2
+achieves its best performance under BM25: Avg. Com-
+ments per patch decreases from 2.29 (“No context”) to0.89,
+while Precision jumps from 5.10% to 10.90%, yielding an
+F1 of 15.59. Conversely, Qwen-480B-Coder peaks using
+Embedding-based retrieval (F1=14.36), significantly outper-
+forming its BM25 score (11.69). Thus, no single retrieval
+method is optimal for all models; performance is highly de-
+pendent on the specific combination of model and retrieval
+mode.
+Key observationThe Agent-based approach consistently
+produces far fewer review comments than other methods,
+and its effectiveness is strongly model-dependent. Perfor-
+mance varies markedly across different LLMs under this
+paradigm. Furthermore, different models respond differ-
+ently to context retrieval methods, e.g., pairing Claude-4.5-
+Sonnet with Agent frameworks, DeepSeek with BM25, and
+Qwen with Embedding consistently present optimal perfor-
+mance.
+4.2.2. CONTEXT LEVEL-WISE IMPACT ONACR
+PERFORMANCE
+We evaluate the efficacy of various approaches in identifying
+issues that necessitate varying context levels(defined in Ta-
+ble 1). Since it is impossible to ascertain the precise context
+level implicitly utilized in each inference, we exclusively
+report Recall metrics.
+The impacts derived from contextual levelsAs pre-
+sented in Table 4, with the notable exception of Agent
+frameworks, all context retrieval methodologies (No context,
+BM25, Embedding) exhibit a distinct trend of performance
+decay across varying context levels, consistently adhering
+to the hierarchy of Diff>File>Repo . Taking the “No
+context” method as an exemplar: Qwen-480B-Coder’s per-
+formance degrades from 33.82% at the Diff level to 22.59%
+at the Repo level, further declining to 17.60% at the Repo
+level. Similarly, GPT-5.2 demonstrates a parallel downward
+trajectory. Even the incorporation of retrieval augmentation
+(BM25 or Embedding) fails to reverse this phenomenon
+6\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Table 4.Performance on Finding Issues Using Different Contextual
+Scopes Across Various ACR Methods (Recall only)
+Method Model Context & Recall (%)
+Diff File Repo
+Agent
+Claude-4.5-Sonnet 11.95 16.84 13.77
+Deepseek-V3.2 4.28 4.64 8.00
+GLM-4.7 6.50 5.95 4.40
+GPT-5.2 3.21 2.52 3.45
+Qwen-480B-Coder 4.49 5.24 5.94
+No context
+Claude-4.5-Sonnet 45.76 40.54 38.63
+Deepseek-V3.2 39.26 32.43 36.91
+GLM-4.7 31.43 24.90 21.03
+GPT-5.2 50.66 43.82 42.92
+Qwen-480B-Coder 33.82 22.59 17.60
+BM25
+Claude-4.5-Sonnet 46.68 41.31 38.63
+Deepseek-V3.2 38.20 32.82 34.33
+GLM-4.7 29.71 27.61 19.31
+GPT-5.2 48.94 43.82 40.34
+Qwen-480B-Coder 29.97 23.94 19.31
+Embedding
+Claude-4.5-Sonnet 46.82 38.03 40.77
+Deepseek-V3.2 39.39 33.40 33.05
+GLM-4.7 30.11 26.64 17.60
+GPT-5.2 52.39 42.28 41.63
+Qwen-480B-Coder 27.06 22.78 18.45
+of performance attenuation correlated with expanding con-
+textual scope. In stark contrast, Agent frameworks (imple-
+mented via Claude Code) generally exhibit an inverse trend,
+frequently outperforming in complex Repo-level scenarios
+compared to isolateddiffscenarios. For instance, under
+the Agent framework, DeepSeek-V3.2’s performance im-
+proved from 4.28% at thedifflevel to 8.00% at the Repo
+level; similarly, Qwen-480B-Coder ascended from 4.49%
+to 5.94%. While this suggests that Agents can leverage
+multi-turn interactions to effectively retrieve complex con-
+textual information, the extremely low scores at thedifflevel
+(e.g., DeepSeek’s4.28% VS. “No context” performance of
+39.26%) may imply Agents may become preoccupied with
+external dependencies, thereby overlooking conspicuous
+local issues inherent within thediffitself.
+Key observationACR methods other than the Agent-
+based approach show a declining ability to detect issues
+as the required context level/scope increases, whereas the
+Agent approach exhibits the opposite trend.
+4.2.3. LANGUANGE-WISE IMPACT ONACR
+PERFORMANCE
+Figure 3 reveals that programming languages may also im-
+pact the performance of various ACR approaches, which
+to a fair degree confirm the importance of expanding the
+benchmark to multiple programming languages.
+Language-specific bias in model performanceThe ef-
+fectiveness of different ACR methods varies considerably
+across programming languages, revealing strong language-
+specific bias. For instance, Claude-4.5-Sonnet—the best-
+performing model in Agent tasks—exhibits a clear perfor-
+mance hierarchy: it achieves notably higher F1 scores on
+Python (0.247), Java (0.241), Go (0.218), and C (0.189),
+forming a distinct top tier. In contrast, its performance
+drops sharply on TypeScript (0.081), PHP (0.082), and Rust
+(0.091), with gaps as large as 3× between Python and Type-
+Script. We attribute this discrepancy primarily to the uneven
+distribution of the models’ training data. Languages such
+as Python and Java, with their extensive ecosystems and
+abundance of high-quality open-source repositories, likely
+provide sufficient and well-curated training corpora. In con-
+trast, for languages like Rust, the relatively scarce corpus
+often hinders LLMs/agents from acquiring the necessary
+knowledge to execute accurate planning steps.
+Meanwhile, a cross-comparison of all mainstream frame-
+works (No context, BM25, Embedding, Agent) also reveals
+that C# exhibits exceptional interpretability and model-
+friendliness, whereas the C language consistently remains at
+the bottom of the performance spectrum. In the context-free
+“No context” mode, GPT-5.2 achieved the highest F1 score
+across the board (0.309) on C#, while the same model scored
+only 0.085 on C. This trend is further corroborated by Qwen-
+480B-Coder (C# 0.268 vs. C 0.104). Given the application
+status of both languages, we can reasonably assume that C#
+and C provide comparable abundance for training corpora.
+In this sense, this phenomenon deeply reflects the impact of
+programming language intrinsic characteristics on the per-
+formance of LLMs. For example, as a strongly typed, and
+object-oriented language, C# possesses rigorous namespace
+management and explicit type definitions. In contrast, C
+relies heavily on pointer operations, macro definitions, and
+implicit memory management. Its dependency information
+is often implicit within unstructured header files or linking
+logic. We hypothesize that such structural features exert a
+substantial influence on the ACR performance of LLMs.
+Performance impact of context across languagesWhile
+context is generally expected to improve model perfor-
+mance, our experiments reveal a counter-intuitive trend:
+introducing context leads to significant “Contextual Back-
+wardness” in most languages, with only a few demonstrat-
+ing robustness. Comparing the “No context” mode with
+the “Agent/Retrieval” modes reveals two distinct behavioral
+patterns. For C#, C++, JavaScript, PHP, Python, Rust, and
+TypeScript, the introduction of complex context frameworks
+paradoxically introduced noise. Taking GPT-5.2 as an ex-
+ample, its performance on C# plummeted from 0.309 in “no
+context” mode to 0.095 in Agent mode; similarly, Python
+declined from 0.165 to 0.071. This indicates that for these
+7\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Claude
+Deepseek
+GLM GPT Qwen
+0.00
+0.05
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35Semantic F1
+C (total:139)
+Agent
+BM25
+Bare
+Embedding
+Claude
+Deepseek
+GLM GPT Qwen
+0.00
+0.05
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35
+C# (total:45)
+Claude
+Deepseek
+GLM GPT Qwen
+0.00
+0.05
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35
+C++ (total:304)
+Claude
+Deepseek
+GLM GPT Qwen
+0.00
+0.05
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35Semantic F1
+Go (total:174)
+Claude
+Deepseek
+GLM GPT Qwen
+0.00
+0.05
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35
+Java (total:212)
+Claude
+Deepseek
+GLM GPT Qwen
+0.00
+0.05
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35
+JavaScript (total:112)
+Claude
+Deepseek
+GLM GPT Qwen
+Model
+0.00
+0.05
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35Semantic F1
+PHP (total:41)
+Claude
+Deepseek
+GLM GPT Qwen
+Model
+0.00
+0.05
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35
+Python (total:114)
+Claude
+Deepseek
+GLM GPT Qwen
+Model
+0.00
+0.05
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35
+Rust (total:59)
+Claude
+Deepseek
+GLM GPT Qwen
+Model
+0.00
+0.05
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35
+TypeScript (total:305)
+Figure 3.Language-wise Code Review Performance
+languages, externally retrieved context or redundant plan-
+ning steps generated by the Agent severely interfered with
+the model’s intrinsic judgment. In contrast, only C, Go, and
+Java maintained stability or even achieved improvements
+within complex contexts. The most prominent instance is
+Claude-4.5-Sonnet, which realized substantial performance
+leaps via the Agent framework on Go ( 0.120→0.218 ),
+Java (0.142→0.241 ), and C (0.106→0.189 ). This sug-
+gests that when considering whether to provide contextual
+information to models to improve their performance in ACR,
+the answer varies entirely depending on the programming
+language.
+Key observationDifferent ACR methods exhibit signifi-
+cant language-specific bias. For certain languages, intro-
+ducing context retrieval methods may even degrade perfor-
+mance.
+5. Error Analysis
+Detailed case studies of incorrect review comments gen-
+erated by the model are provided in the Appendix D. We
+observe that current models continue to suffer from knowl-
+edge errors during code review. Furthermore, noisy data
+introduced by context retrieval is identified as a significant
+factor contributing to the generation of incorrect review
+comments.
+6. Conclusion
+We proposedAACR-Bench, a multi-lingual benchmark de-
+signed to evaluate ACR systems with repository-level con-
+text.AACR-Benchfills a critical gap in the field by better
+measuring the ability of various methods to leverage com-
+plex, repo-level context to perform ACR. Our extensive
+empirical evaluation onAACR-Benchreveals that:
+The granularity/level of context and the choice of retrieval
+methods significantly impact ACR performance, and this
+influence varies depending on the LLM, programming lan-
+guage, and the LLM usage paradigm (e.g., whether an Agent
+architecture is employed).
+As long as the above finding strongly underscores the ne-
+cessity of constructing a dataset such asAACR-Bench, our
+work also has limitations. Specifically, although we lever-
+aged LLM-generated reviews to augment our dataset, con-
+structing a fully comprehensive Ground Truth remains a
+formidable challenge due to the inherent complexity and
+8\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+subjectivity of real-world software systems. Future work
+will focus on further expanding the dataset scale and explor-
+ing more advanced semi-automated methods to refine the
+Ground Truth quality.
+Impact Statement
+This work introducesAACR-Bench, the first multilingual,
+repository-level context-aware benchmark for Automated
+Code Review. By comprehensively characterizing the ca-
+pability boundaries of current Large Language Models, our
+study identifies critical challenges and charts the course for
+the next generation of ACR systems.
+Paradigm Shift in Automated Code ReviewOur re-
+search establishes a rigorous evaluation standard and reveals
+three fundamental challenges that future ACR methodolo-
+gies should address to achieve practical utility:
+• Navigating the Precision-Recall Trade-off:We iden-
+tify a distinct dichotomy: traditional generative ap-
+proaches maximize Recall but suffer from frequent
+hallucinations, whereas Agent-based methods achieve
+high Precision in defect localization but lack compre-
+hensive coverage. This finding urges the community to
+move beyond single-metric optimization and focus on
+hybrid architectures that maintain high precision while
+expanding defect detection coverage.
+• Towards Adaptive Context Awareness:We chal-
+lenge the prevailing assumption that “more context
+is always better.” Our empirical results demonstrate
+that the impact of retrieved context varies significantly
+across languages (e.g., C# vs. Python), where irrele-
+vant context often serves as noise. This necessitates a
+shift towardsAdaptive Context Awareness, requiring
+systems to possess meta-cognitive capabilities to dy-
+namically determine the necessity and granularity of
+retrieval based on code characteristics and task types.
+• Unifying Local and Global Perspectives:We observe
+that while Retrieval-Augmented Generation (RAG)
+aids global dependency understanding, the induced
+noise compromises the detection of local defects within
+Diffs. Conversely, Agents prone to “context tunnel-
+ing” often overlook obvious local errors. Future itera-
+tions must develop dynamic attention mechanisms that
+organically integrate microscopic syntax verification
+with macroscopic, cross-file risk assessment.
+From Passive Ingestion to Active AuditingThis work
+reframes the evaluation of “context effectiveness” in ACR.
+We argue that high-quality code review depends less on
+Information Retrieval and more onInformation Utilization
+and reasoning robustness. Our findings indicate that without
+sufficient noise tolerance capability, even relevant code re-
+trieved via BM25 or Embeddings can degrade performance.
+The superior reasoning of Agents in complex scenarios
+suggests a paradigm shift from “Passive Code Ingestion”
+(receiving pre-retrieved snippets) to “Active Code Audit-
+ing”. Enabling models to actively explore context, ver-
+ify hypotheses through multi-turn interactions, and filter
+noise—mimicking human expert behavior—represents the
+most promising direction for achieving reliable automated
+code review.
+References
+Bacchelli, A. and Bird, C. Expectations, outcomes, and
+challenges of modern code review. In2013 35th Interna-
+tional Conference on Software Engineering (ICSE), pp.
+712–721. IEEE, 2013.
+DeepSeek-AI. Deepseek-v3.2: Pushing the frontier of open
+large language models, 2025.
+Distefano, D., F ¨ahndrich, M., Logozzo, F., and O’Hearn,
+P. W. Scaling static analyses at facebook.Communica-
+tions of the ACM, 62(8):62–70, 2019.
+Guo, H., Zheng, X., Liao, Z., Yu, H., Di, P., Zhang, Z., and
+Dai, H.-N. Codefuse-cr-bench: A comprehensiveness-
+aware benchmark for end-to-end code review evaluation
+in python projects.arXiv preprint arXiv:2509.14856,
+2025a.
+Guo, J., Wang, C., Xu, X., Su, Z., and Zhang, X. Repoau-
+dit: An autonomous llm-agent for repository-level code
+auditing.arXiv preprint arXiv:2501.18160, 2025b.
+Hou, X., Zhao, Y ., Liu, Y ., Yang, Z., Wang, K., Li, L., Luo,
+X., Lo, D., Grundy, J., and Wang, H. Large language
+models for software engineering: A systematic literature
+review.ACM Transactions on Software Engineering and
+Methodology, 33(8):1–79, 2024.
+Hu, R., Wang, X., Wen, X.-C., Zhang, Z., Jiang, B., Gao,
+P., Peng, C., and Gao, C. Benchmarking llms for fine-
+grained code review with enriched context in practice.
+arXiv preprint arXiv:2511.07017, 2025.
+Jimenez, C. E., Yang, J., Wettig, A., Yao, S., Pei, K., Press,
+O., and Narasimhan, K. Swe-bench: Can language mod-
+els resolve real-world github issues?arXiv preprint
+arXiv:2310.06770, 2023.
+Kapadnis, M. N., Naik, A., and Rose, C. Crscore++: Rein-
+forcement learning with verifiable tool and ai feedback
+for code review.arXiv preprint arXiv:2506.00296, 2025.
+Khoshnoud, F., Nasab, A. R., Toudeji, Z., and Sami, A.
+Which bugs are missed in code reviews: An empirical
+9\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+study on smartshark dataset. InProceedings of the 19th
+International Conference on Mining Software Reposito-
+ries, pp. 137–141, 2022.
+Le, H., Wang, Y ., Gotmare, A. D., Savarese, S., and Hoi,
+S. C. H. Coderl: Mastering code generation through
+pretrained models and deep reinforcement learning.Ad-
+vances in Neural Information Processing Systems, 35:
+21314–21328, 2022.
+Li, S., Wang, D., Thongtanunam, P., Wang, Z., Yu, J.,
+and Chen, J. Issue-oriented agent-based framework for
+automated review comment generation.arXiv preprint
+arXiv:2511.00517, 2025.
+Li, Z., Lu, S., Guo, D., Duan, N., Jannu, S., Jenks, G., Ma-
+jumder, D., Green, J., Svyatkovskiy, A., Fu, S., et al.
+Automating code review activities by large-scale pre-
+training. InProceedings of the 30th ACM Joint European
+Software Engineering Conference and Symposium on the
+Foundations of Software Engineering, pp. 1035–1047,
+2022.
+Liu, C., Lin, H. Y ., and Thongtanunam, P. Too noisy to learn:
+Enhancing data quality for code review comment genera-
+tion. In2025 IEEE/ACM 22nd International Conference
+on Mining Software Repositories (MSR), pp. 236–248.
+IEEE, 2025.
+Liu, N. F., Lin, K., Hewitt, J., Paranjape, A., Bevilacqua, M.,
+Petroni, F., and Liang, P. Lost in the middle: How lan-
+guage models use long contexts, 2023.URL https://arxiv.
+org/abs/2307.03172, 2023a.
+Liu, T., Xu, C., and McAuley, J. Repobench: Benchmarking
+repository-level code auto-completion systems.arXiv
+preprint arXiv:2306.03091, 2023b.
+Liu, X., Yu, H., Zhang, H., Xu, Y ., Lei, X., Lai, H., Gu, Y .,
+Ding, H., Men, K., Yang, K., et al. Agentbench: Evalu-
+ating llms as agents.arXiv preprint arXiv:2308.03688,
+2023c.
+Lu, J., Yu, L., Li, X., Yang, L., and Zuo, C. Llama-reviewer:
+Advancing code review automation with large language
+models through parameter-efficient fine-tuning. In2023
+IEEE 34th International Symposium on Software Relia-
+bility Engineering (ISSRE), pp. 647–658. IEEE, 2023.
+Ren, X., Dai, C., Huang, Q., Wang, Y ., Liu, C., and Jiang,
+B. Hydra-reviewer: A holistic multi-agent system for
+automatic code review comment generation.IEEE Trans-
+actions on Software Engineering, 2025.
+Robertson, S., Zaragoza, H., et al. The probabilistic rele-
+vance framework: Bm25 and beyond.Foundations and
+trends® in information retrieval, 3(4):333–389, 2009.
+Sadowski, C., Van Gogh, J., Jaspan, C., Soderberg, E., and
+Winter, C. Tricorder: Building a program analysis ecosys-
+tem. In2015 IEEE/ACM 37th IEEE International Con-
+ference on Software Engineering, volume 1, pp. 598–608.
+IEEE, 2015.
+Sharanarthi, T. and Polineni, S. Multi-agent llm collabo-
+ration for adaptive code review, debugging, and security
+analysis. In2025 International Conference on Mecha-
+tronics, Robotics, and Artificial Intelligence (MRAI), pp.
+541–546. IEEE, 2025.
+Solmaz, O. Google’s Code Review Guidelines (GitHub
+Adaptation), September 2025. URL https://
+solmaz.io/google-eng-practices-github .
+Accessed: 2026-01-28.
+Sun, T., Xu, J., Li, Y ., Yan, Z., Zhang, G., Xie, L., Geng, L.,
+Wang, Z., Chen, Y ., Lin, Q., et al. Bitsai-cr: Automated
+code review via llm in practice. InProceedings of the
+33rd ACM International Conference on the Foundations
+of Software Engineering, pp. 274–285, 2025.
+Tang, X., Kim, K., Song, Y ., Lothritz, C., Li, B., Ezzini, S.,
+Tian, H., Klein, J., and Bissyand´e, T. F. Codeagent: Au-
+tonomous communicative agents for code review.arXiv
+preprint arXiv:2402.02172, 2024.
+Tao, Y ., Dang, Y ., Xie, T., Zhang, D., and Kim, S. How
+do software engineers understand code changes? an ex-
+ploratory study in industry. InProceedings of the ACM
+SIGSOFT 20th International symposium on the founda-
+tions of software engineering, pp. 1–11, 2012.
+Team, G., Zeng, A., Lv, X., Zheng, Q., Hou, Z., Chen, B.,
+Xie, C., Wang, C., Yin, D., Zeng, H., Zhang, J., Wang, K.,
+Zhong, L., Liu, M., Lu, R., Cao, S., Zhang, X., Huang,
+X., Wei, Y ., Cheng, Y ., An, Y ., Niu, Y ., Wen, Y ., Bai, Y .,
+Du, Z., Wang, Z., Zhu, Z., Zhang, B., Wen, B., Wu, B.,
+Xu, B., Huang, C., Zhao, C., Cai, C., Yu, C., Li, C., Ge,
+C., Huang, C., Zhang, C., Xu, C., Zhu, C., Li, C., Yin,
+C., Lin, D., Yang, D., Jiang, D., Ai, D., Zhu, E., Wang,
+F., Pan, G., Wang, G., Sun, H., Li, H., Li, H., Hu, H.,
+Zhang, H., Peng, H., Tai, H., Zhang, H., Wang, H., Yang,
+H., Liu, H., Zhao, H., Liu, H., Yan, H., Liu, H., Chen, H.,
+Li, J., Zhao, J., Ren, J., Jiao, J., Zhao, J., Yan, J., Wang,
+J., Gui, J., Zhao, J., Liu, J., Li, J., Li, J., Lu, J., Wang,
+J., Yuan, J., Li, J., Du, J., Du, J., Liu, J., Zhi, J., Gao, J.,
+Wang, K., Yang, L., Xu, L., Fan, L., Wu, L., Ding, L.,
+Wang, L., Zhang, M., Li, M., Xu, M., Zhao, M., Zhai,
+M., Du, P., Dong, Q., Lei, S., Tu, S., Yang, S., Lu, S., Li,
+S., Li, S., Shuang-Li, Yang, S., Yi, S., Yu, T., Tian, W.,
+Wang, W., Yu, W., Tam, W. L., Liang, W., Liu, W., Wang,
+X., Jia, X., Gu, X., Ling, X., Wang, X., Fan, X., Pan, X.,
+Zhang, X., Zhang, X., Fu, X., Zhang, X., Xu, Y ., Wu, Y .,
+Lu, Y ., Wang, Y ., Zhou, Y ., Pan, Y ., Zhang, Y ., Wang, Y .,
+10\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Li, Y ., Su, Y ., Geng, Y ., Zhu, Y ., Yang, Y ., Li, Y ., Wu,
+Y ., Li, Y ., Liu, Y ., Wang, Y ., Li, Y ., Zhang, Y ., Liu, Z.,
+Yang, Z., Zhou, Z., Qiao, Z., Feng, Z., Liu, Z., Zhang,
+Z., Wang, Z., Yao, Z., Wang, Z., Liu, Z., Chai, Z., Li, Z.,
+Zhao, Z., Chen, W., Zhai, J., Xu, B., Huang, M., Wang,
+H., Li, J., Dong, Y ., and Tang, J. Glm-4.5: Agentic,
+reasoning, and coding (arc) foundation models, 2025.
+URLhttps://arxiv.org/abs/2508.06471.
+Team, Q. Qwen3 technical report, 2025. URL https:
+//arxiv.org/abs/2505.09388.
+Tufano, R., Masiero, S., Mastropaolo, A., Pascarella, L.,
+Poshyvanyk, D., and Bavota, G. Using pre-trained models
+to boost code review automation. InProceedings of the
+44th international conference on software engineering,
+pp. 2291–2302, 2022.
+Yu, Y ., Rong, G., Shen, H., Zhang, H., Shao, D., Wang, M.,
+Wei, Z., Xu, Y ., and Wang, J. Fine-tuning large language
+models to improve accuracy and comprehensibility of
+automated code review.ACM transactions on software
+engineering and methodology, 34(1):1–26, 2024a.
+Yu, Y ., Zhang, L., Rong, G., Shen, H., Zhang, J., Yan, H.,
+Shi, G., Shao, D., Pan, R., Li, Y ., et al. Distilling desired
+comments for enhanced code review with large language
+models.arXiv preprint arXiv:2412.20340, 2024b.
+Zeng, Z., Shi, R., Han, K., Li, Y ., Sun, K., Wang, Y .,
+Yu, Z., Xie, R., Ye, W., and Zhang, S. Benchmarking
+and studying the llm-based code review.arXiv preprint
+arXiv:2509.01494, 2025.
+Zhang, F., Chen, B., Zhang, Y ., Keung, J., Liu, J., Zan,
+D., Mao, Y ., Lou, J.-G., and Chen, W. Repocoder:
+Repository-level code completion through iterative re-
+trieval and generation. InThe 2023 Conference on Em-
+pirical Methods in Natural Language Processing.
+Zhang, Q., Fang, C., Xie, Y ., Zhang, Y ., Yang, Y ., Sun,
+W., Yu, S., and Chen, Z. A survey on large lan-
+guage models for software engineering.arXiv preprint
+arXiv:2312.15223, 2023.
+Zhang, Y ., Zhang, Y ., Sun, Z., Jiang, Y ., and Liu,
+H. Laura: Enhancing code review generation with
+context-enriched retrieval-augmented llm.arXiv preprint
+arXiv:2512.01356, 2025.
+11\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+A. Overview of the Appendix
+The Appendix is organized as follows:
+• Section B provides detailed information on AACR-Bench, including its data construction process, comparisons with
+existing benchmarks, and representative data samples.
+• Section C describes the experimental setup of AACR-Bench, covering the full evaluation pipeline, tested models,
+hyperparameter settings, and an analysis of fine-grained results.
+• Section D provides case studies based on the AACR-Bench evaluation results
+B. AACR-Bench Details
+B.1. Detailed Dataset Curation Process
+Figure 4.the Construction Process of AACR-Bench
+The construction process of AACR-Bench is shown in Figure 4.
+Selection of Programming Languages and RepositoriesTo ensure the recency of the evaluation data and the diversity
+of programming languages, we selected the top ten programming languages based on the StackOverflow Developer Survey
+2025, specifically: JavaScript, Python, TypeScript, Java, C#, C++, C, PHP, Go, and Rust. For each of these languages,
+we selected repositories where the language serves as the primary programming language to act as data sources for PR
+information extraction, adhering to the following criteria: First, we defined a candidate set of active GitHub repositories that
+ranked within the top 2,000 in terms of both new stars and closed PRs between December 1, 2024, and December 1, 2025.
+Subsequently, we ranked the candidate repositories by the number of new stars and selected the top five for each language.
+Ultimately, we constructed a collection of 50 high-activity repositories across 10 programming languages (five repositories
+per language) to serve as the source for extracting PRs and review comments.
+12\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+PR Filtering and Review Comment AugmentationFocusing on the 50 selected repositories, we utilized the GitHub API
+to collect all Pull Requests (PRs) created between December 1, 2024, and December 1, 2025, yielding a total of 12,715
+records. For each PR, we extracted the following key information:
+• The title and description of the PR;
+• The number of lines of code changed;
+• The base commit of the PR;
+• Comprehensive review comment data, including the target revision, relevant file paths, line ranges, and the specific
+content of the reviews.
+Based on the aforementioned raw data, we implemented the following preprocessing steps:
+• Domain Classification:Analyzed the problem domain of the PR using a Large Language Model (LLM), adhering to
+the taxonomy defined in SWE-Bench, as shwon in Table 5;
+•Language Identification:Analyzed the natural language used in the PR title and description;
+• Revision Selection:Identified and extracted the revision containing the highest number of review comments, along
+with all corresponding review data;
+• Size Categorization:Classified the PR size based on the number of changed lines, following the T-Shirt Size
+classification method, as shown in Table 6.
+• Reviewed Programming Language Identification:Identified the primary programming language of the reviewed
+code based on the file extensions of the files targeted by the review comments.
+Table 5.Categorization of PR’s Problem Domain
+Category (Abbr.) Description PR Count
+Bug Fixes (BF) Resolving functional errors, crashes, incorrect outputs 53
+New Feature Additions (NFA) Adding new functionality or features to the application 44
+Code Refactoring (CA) Improving code structure, readability, maintainability without changing external behavior 28
+Documentation Update (DU) Changes related to code comments or external documentation 12
+Test Suite / CI Enhancements (TC) Improving test coverage, test quality, or continuous integration processes 20
+Performance Optimizations (PO) Improving application speed, response time, or resource usage efficiency 19
+Security Patches (SV) Fixing code defects that could lead to security issues 13
+Dependency Updates (DE) Updating third-party library dependencies or ensuring compatibility across different environments 3
+Code Style, Linting (CLF) Ensuring code complies with team coding standards and consistency 8
+For the domain classification task, we employed the Qwen3-235B-A22B-Thinking-2507 model; the specific prompt used is
+shown in Figure 5. To evaluate the reliability of the classification, we randomly sampled 350 instances from the results for
+manual verification. The analysis revealed an accuracy of 92.36%. At a 95% confidence level, this result has a margin of
+error of5.06%.
+Building upon the preprocessed data, we established five filtering criteria to automatically select high-quality samples and
+got 3,328 PR Items:
+Table 6.The T-Shirt Size Categorization of PR Size
+Size Lines Changed # PR
+XS 0 - 9 8
+S 10 -29 22
+M 30 - 99 47
+L 100 - 499 89
+XL 500 - 999 34
+XXL 1000+ 0
+13\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+---Role---
+You are a code review assistant tasked with classifying GitHub Pull Requests based on their Title and Description.
+---Goal---
+Analyze the Title and Description of the provided PR and determine the most appropriate category from the predefined
+list below. Respond only with the category code (e.g., "BF" or "NFA") without additional text.
+The categories are as follows:
+- BF: Bug Fix (fixes incorrect behavior, crashes, or errors)
+- NFA: New Feature Addition (implements new functionality or capabilities)
+- CA: Code Refactoring / Architectural Improvement (improves structure/design without changing behavior)
+- DU: Documentation Update (changes to READMEs, comments, or external docs)
+- TC: Test Suite / CI Enhancements (adds/fixes tests, CI/CD pipelines, or coverage)
+- PO: Performance Optimization (improves speed, memory usage, or resource efficiency)
+- SV: Security Patch / Vulnerability Fix (addresses security issues or vulnerabilities)
+- DE: Dependency Update / Environment Compatibility (updates libraries, tools, or environment configs)
+- CLF: Code Style / Linting / Formatting Fix (enforces style guides, fixes lint errors)
+---Examples---
+############################
+Example 1:
+PR Title:
+Add Flydigi VADER 4 Pro support
+PR Description:
+Add a new controller support
+## Description
+The controller outputs custom HID reports for PS5 controller emulation through vendor software, which also contain
+motion data unlike the normal HID endpoint.
+All inputs checked using ‘testcontroller‘, still not sure how to properly test gyro data and generate mappings for
+other platforms
+---------------
+output:
+NFA
+############################
+Example 2:
+PR Title:
+SDL_BlitSurfaceScaled(): Fix divisions by zero
+PR Description:
+Related: https://github.com/libsdl-org/SDL/issues/12844
+---------------
+output:
+BF
+############################
+---Real Data---
+############################
+PR Title:
+{pr_title}
+PR Description:
+{pr_description}
+---------------
+output:
+Figure 5.Prompt Used For Classification of PR’s Problem Domain
+14\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Figure 6.Distribution of PRs Across Problem Domains
+•Language Standard:The title and description of the PR must be written in English.
+• Size Constraint:The number of changed lines of code must be limited to 1,000. According to Google’s code review
+practices, changes exceeding this threshold are considered too large for effective review.
+• Language Consistency:The programming language of the primarily modified files must match the main language of
+the repository.
+• Review Richness:The PR must contain at least two inline comments, including at least one constructive comment that
+was accepted (i.e., resulted in code modifications)..
+We conducted a second round of manual verification on the initially filtered PRs. Focusing on semantic validity, we excluded
+trivial changes that were detached from the project’s business context or lacked actual semantic meaning. This process
+resulted in a final dataset of 573 PRs.
+Finally, to ensure the representativeness and diversity of the benchmark, we applied stratified sampling to the candidate pool
+based on the source repository, problem domain, and PR size. This process yielded a final dataset consisting of 200 PRs.
+The distributions of these PRs across problem domains and sizes are shown in Figure 6 and Figure 7, respectively.
+Given that code review often involves multi-turn dialogues between reviewers and developers to verify the validity of
+issues, raw comments may suffer from missing context and noise. To address this, we employed an LLM to perform deep
+semantic analysis on the review threads of the selected revision. Specifically, we extracted confirmed code defects from
+these multi-round interactions and synthesized them into “Augmented Review Comments,” while discarding comments that
+did not point out substantive issues. The prompt used for this process is shown in Figure 8. We applied this augmentation
+process to 1,119 conversation threads and sampled 300 results for manual evaluation of correctness. An augmentation result
+was defined as “correct” if the model accurately provided review comments identifying confirmed code issues within the
+thread, or correctly determined that the thread contained no code issues. The evaluation results indicate an accuracy of 95%,
+with a 95% confidence level and a 4.74% margin of error.
+Review Completion and Expert AnnotationConstrained by the cognitive boundaries and capacity limits of human
+reviewers, relying solely on manual efforts often fails to uncover all potential code defects. To address the resulting issue of
+15\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Figure 7.Distribution of PRs Across Different Size
+## Code Review Summary Prompt
+You are a senior code reviewer tasked with summarizing code review discussions. Given a series of conversations and
+their corresponding diff hunks, your goal is to extract the most concise and actionable review feedback.
+### Instructions:
+1. **Analyze the provided materials: **
+- Review conversations between developers
+- Examine the associated code diff hunks
+- Identify the core issues being discussed
+2. **Summarize with precision: **
+- Extract the main concern or issue in 1-2 sentences
+- Include only essential context needed to understand the problem
+- Focus on technical substance, not conversational details
+- Be direct and specific about what needs attention
+3. **Format your response: **
+- Start with the core issue
+- Follow with minimal necessary context
+- Use clear, technical language
+- Avoid redundancy or filler words
+4. **Special cases: **
+- If the discussion concludes that no issues exist, simply respond: "No code issues identified."
+- If multiple issues are discussed, list them as bullet points, each with its own concise summary
+### Example Output Format:
+[Brief background information if necessary] [One-sentence description of the problem]
+Or for no issues:
+"No code issues identified."
+### Your Task:
+Review the following conversation and diff hunk, then provide your summary following the above guidelines.
+Diff Hunk:
+{diff_hunk}
+Conversation:
+{review_comments}
+Figure 8.Prompt Used For Review Comments Augmentation
+16\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Table 7.Issue Categories revealed in Review Comments
+Issue Category Description Comment Count
+Security Vulnerability Security weaknesses within the code that could lead to data breaches, unauthorized access, or
+susceptibility to other malicious attacks
+53
+Code Defect Logical errors or implementation flaws that may cause runtime crashes, produce incorrect results, or
+result in unexpected system behaviors
+709
+Maintainability & Readability Issues related to coding style or structural design that diminish code readability and hinder future
+comprehension and maintenance efforts
+626
+Performance Issue Inefficiencies in algorithms or improper resource management that result in non-functional bottlenecks,
+such as high latency, insufficient throughput, or excessive resource consumption
+117
+-Role-
+You are an expert code reviewer assistant specialized in analyzing and comparing code review comments.
+-Task-
+Determine whether two given review comments express the same concern or suggestion regarding the privided diff hunk.
+Ignore differences in wording, tone, or formatting-focus solely on semantic equivalence of the underlying
+issue. If the core intent and technical substance are identical, answer "yes", otherwise, answer "no".
+-Diff Hunk-
+{diff_hunk}
+-Review Comments-
+Review Comment 1:
+{comment1}
+Review Comment 2:
+{comment2}
+-Task-
+Determine whether the two review comments given above express the same concern or suggestion regarding the provided
+diff hunk. Ignore differences in wording, tone, or formatting-focus solely on semantic equivalence of the
+underlying issue. If the core intent and technical substance are identical, answer "yes"; other wise, answer "
+no".
+Your answer:
+Figure 9.Prompt Used to detect Repeated Comments
+“Incomplete Issue Annotation,” we employed LLM generation techniques to comprehensively augment the review comments.
+To mitigate single-model bias and ensure diversity, we constructed a generation matrix comprising six mainstream open-
+source and proprietary models. These models generated review comments in parallel through two heterogeneous frameworks:
+an Internal Review System and an Open-Source Agent System (Claude Code). All generated comments underwent semantic
+de-duplication before being merged with the previously augmented human review comments, forming a candidate set for
+verification. This semantic de-duplication was performed using Qwen3-235B-A22B-Thinking-2507. Specifically, all review
+comments were first grouped based on their repository, Pull Request (PR), file path, and the specific Diff Hunk addressed.
+Within each group, comments underwent pairwise comparison via the LLM, and duplicates were removed based on the
+comparison results. The prompt used for this comparison is shown in Figure 9. We use the election of results running 5
+times of judgement.
+Subsequently, we submitted this set to over 80 senior software engineers with more than two years of experience for
+rigorous Human Annotation. The annotation process covered three core dimensions: verifying the correctness of the review
+comments, categorizing issue types according to Table 7, and defining the scope of context dependency. The annotation
+workforce consisted of a Core Expert Team of 6 members and a General Annotation Pool comprising the remaining
+participants. The annotation process was divided into three rounds: The first two rounds were conducted by the General
+Annotation Pool using a double-blind mechanism, where each comment was independently annotated by two different
+individuals, and task allocation was strictly matched to the annotators’ programming language expertise. The third round
+was conducted by the Core Expert Team, which was responsible for discussing and adjudicating conflicting results from the
+first two rounds and determining the final annotations. Through this “human-machine collaborative” multi-round annotation
+17\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Table 8.Distribution of Review Comments by Model Detection Frequency
+Number of Detecting Models Count
+0(Augmented only) 360
+1 1027
+2 107
+3 11
+workflow, we ensured that the final evaluation benchmark possesses both high coverage and high accuracy.
+To evaluate the complementarity of the chosen LLMs, we analyzed the overlap of generated review comments along
+with augmented review comments. Table 8 illustrates the distribution of comments based on the number of models that
+successfully detected them in the annotated ground truth.
+Interestingly, while only 11 of the comments achieved consensus among 3 models (detected by three models), a significant
+portion was identified by only a single model. This low overlap suggests the necessity to include multi-model results in
+review comment generation process for better issue coverage.
+B.2. Examples of Ground Truth
+In this section, we present examples of review comments that were verified as valid through the final annotation process,
+thereby serving as the Ground Truth for AACR-Bench. For each example, we provide the repository name, the Pull Request
+(PR) ID, the target file, the specific Diff Hunk addressed, the content of the review comment, and a corresponding analysis.
+C. Detail of Experiments
+C.1. Detailed Benchmark Process
+The evaluation process of AACR-Bench aligns with the Diff-oriented paradigm of modern code review. Within the
+benchmark, each Pull Request (PR) serves as an evaluation instance, where the collection of review comments associated
+with that PR constitutes the Ground Truth. For each PR, the Automated Code Review (ACR) method under evaluation
+is required to iterate through the Diff Hunks within the code changes and generate review comments for each hunk. The
+code review capability of the ACR method is then measured by comparing the generated comments against the Ground
+Truth to calculate Precision, Recall, and F1-score. Prompt for review comment match is the same as 9 and the model used
+is Qwen3-235B-A22B-Instruct-2507. A generated review comment is considered Line Correct if its line range overlaps
+with that of a review comment in the ground truth. It is considered Semantically Correct if it overlaps with the ground
+truth in terms of line numbers and the content is identical. All the models are run with T emperature= 0.7 , T opp = 0.95,
+T opk = 20.
+Evaluation of non-Agent MethodsThe evaluation of non-Agent approaches follows a standardized workflow. For each
+PR in the benchmark, we first clone the repository locally and ensure that both the Base version and the Target version
+(i.e., the version under review) are synchronized. We then verify and extract all diff hunks between the two versions
+using GitPython. The ACR method under evaluation acts as a scanner, iterating through each diff hunk to generate review
+comments. For methods incorporating context retrieval, we build an index based on the code in the Target version to
+facilitate context recall. During the review of each Diff Hunk, we invariably provide the PR Title and PR Description as
+repository-level context. Additionally, repository code context is provided optionally, subject to the specific experimental
+design. The prompts used for evaluation are illustrated in Figure 16 and Figure 17. Specifically, for each review comment,
+the model is required to output three components:
+• The problematic diff fragment: Used for precise localization of the comment;
+• The comment side: Specifying whether the comment applies to the ’left’ (deleted lines in the old version) or the ’right’
+(added lines in the new version);
+• The content of the review comment.
+18\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Ground Truth: Example of Empty Function Implementation
+Repo: FreeCAD/FreeCAD PR ID: #20825
+File: src/Mod/Material/App/ModelManagerExternal.cpp
+Diff Hunk
+1 @@ -0,0 +54,8 @@
+2 + _cache.capacity(cacheSize);
+3 +
+4 + _cache.monitor();
+5 +}
+6 +
+7 +void ModelManagerExternal::cleanup()
+8 +{
+9 +}
+Ground Truth Review Comments Side: RIGHT Line: 59-61
+The cleanup () function is empty but declared in the header . If cleanup functionality is not needed,
+consider removing the function from both the header and implementation . If it ' s a placeholder for
+future functionality , add a comment explaining its intended purpose.
+Analysis
+Code completeness issue: Function is declared in header but implementation is empty without any
+explanation. This inconsistency can confuse users. The comment correctly identifies the problem and
+provides two solutions.
+Figure 10.An Example of Gound Truth Reveiw Comment
+19\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Ground Truth: Example of Unnecessary shared_ptr Copying in Loop
+Repo: FreeCAD/FreeCAD PR ID: #20825
+File: src/Mod/Material/App/ModelManagerExternal.cpp
+Diff Hunk
+1 @@ -0,0 +73,8 @@
+2 +
+3 +std::shared_ptr<std::list<std::shared_ptr<ModelLibrary>>>
+ModelManagerExternal::getLibraries()
+4 +{
+5 + auto libraryList = std::make_shared<std::list<std::shared_ptr<
+ModelLibrary>>>();
+6 + try {
+7 + auto externalLibraries = ExternalManager::getManager()->libraries
+();
+8 + for (auto& entry : *externalLibraries) {
+9 + auto library = std::make_shared<ModelLibrary>(*entry);
+Ground Truth Review Comments Side: RIGHT Line: 79-80
+The loop variable ' entry ' should be a const reference to avoid unnecessary copies : ' const auto& entry
+'. Since externalLibraries is a shared_ptr to a vector of shared_ptr , copying each entry is
+inefficient . The Library class has a copy constructor , but using const reference is more efficient
+and idiomatic .
+Analysis
+Performance optimization suggestion: Loop variable copies shared_ptr objects, causing unnecessary
+reference count increment/decrement. Using const reference avoids copy overhead, which is a C++
+best practice.
+Figure 11.An Example of Gound Truth Reveiw Comment
+20\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Ground Truth: Example of Null Pointer Dereference Risk
+Repo: wavetermdev/waveterm PR ID: #1755
+File: pkg/shellexec/shellexec.go
+Diff Hunk
+1 @@ -322,6 +321,4 @@
+2 - log.Printf("error installing rc files: %v", err)
+3 - return nil, err
+4 - }
+5 shellOpts = append(shellOpts, cmdOpts.ShellOpts...)
+6 shellType := shellutil.GetShellTypeFromShellPath(shellPath)
+7 - conn.Infof(ctx, "detected shell type: %s\n", shellType)
+8 + conn.Infof(logCtx, "detected shell type: %s\n", shellType)
+9 + conn.Infof(logCtx, "swaptoken: %s\n", cmdOpts.SwapToken.Token)
+Ground Truth Review Comments Side: RIGHT Line: 324-324
+Potential nil pointer dereference : cmdOpts.SwapToken could be nil. Add a nil check before accessing
+SwapToken.Token to prevent panic .
+Analysis
+Null pointer dereference risk: Directly accessing a potentially nil pointer member will cause program
+crash. The comment correctly identifies this runtime error risk.
+Figure 12.An Example of Gound Truth Reveiw Comment
+21\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Ground Truth: Example of Silent Failure Without Error Propagation
+Repo: google-gemini/gemini-cli PR ID: #8154
+File: packages/cli/src/utils/commentJson.ts
+Diff Hunk
+1 @@ -0,0 +33,8 @@
+2 + parsed = parse(originalContent) as Record<string, unknown>;
+3 + } catch (error) {
+4 + console.error('Error parsing settings file:', error);
+5 + console.error(
+6 + 'Settings file may be corrupted. Please check the JSON syntax.',
+7 + );
+8 + return;
+9 + }
+Ground Truth Review Comments Side: RIGHT Line: 34-40
+Error handling strategy : When parsing fails , the function logs and returns without throwing. Callers
+might expect the operation to succeed. Consider throwing an error or providing a way to handle
+failures more explicitly .
+Analysis
+Unclear error handling strategy: Function only logs and returns on parsing failure, but callers might
+expect successful operation. This implicit failure could lead to hard-to-debug issues.
+Figure 13.An Example of Gound Truth Reveiw Comment
+22\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Ground Truth: Example of Missing File I/O Error Handling
+Repo: google-gemini/gemini-cli PR ID: #8154
+File: packages/cli/src/utils/commentJson.ts
+Diff Hunk
+1 @@ -0,0 +42,8 @@
+2 + const updatedStructure = applyUpdates(parsed, updates);
+3 + const restoredStructure = restoreEnvVarReferences(
+4 + updatedStructure,
+5 + envVarMappings,
+6 + );
+7 + const updatedContent = stringify(restoredStructure, null, 2);
+8 +
+9 + fs.writeFileSync(filePath, updatedContent, 'utf-8');
+Ground Truth Review Comments Side: RIGHT Line: 49-49
+Missing error handling for file write operations . Should handle potential EACCES or ENOENT errors
+when writing files.
+Analysis
+Missing error handling: File write operations could fail due to permissions or path issues, but code
+doesn’ t handle these common errors, potentially causing abnormal program termination.
+Figure 14.An Example of Gound Truth Reveiw Comment
+23\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Ground Truth: Example of Console.log in Production
+Repo: cline/cline PR ID: #4676
+File: src/core/storage/state.ts
+Diff Hunk
+1 @@ -28,3 +28,7 @@
+2 return await context.globalState.get(key)
+3 }
+4
+5 +// Batched operations for performance optimization
+6 +export async function updateGlobalStateBatch(context: vscode.
+ExtensionContext, updates: Record<string, any>) {
+7 + const batchStart = performance.now()
+8 + console.log(`[PERF] Starting batched global state update with ${Object.
+keys(updates).length} keys`)
+Ground Truth Review Comments Side: RIGHT Line: 33-34
+Consider using a conditional check or a dedicated logging utility instead of direct console . log for
+performance monitoring . This avoids unnecessary console output in production environments where
+verbose logging might not be desired .
+Analysis
+Production environment performance impact: console.log affects performance in production environ-
+ments. Should use conditional logging or specialized logging tools.
+Figure 15.An Example of Gound Truth Reveiw Comment
+24\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+You are an expert code reviewer. Your task is to review the following code changes and provide constructive feedback
+.
+## Pull Request Information
+**Title:** {{ pr_title }}
+**Description:** {{ pr_description }}
+## Code Changes to Review
+‘‘‘diff
+{{ diff_hunk }}
+‘‘‘
+## Instructions
+Please review the code changes above and provide detailed feedback. For each issue you identify:
+1. Use ‘<diff>...</diff>‘ tags to wrap **only the minimal code snippet ** that contains the specific issue you’re
+commenting on. Do NOT include the entire diff_hunk - extract only the relevant lines that demonstrate the
+problem.
+2. Use ‘<side>left</side>‘ or ‘<side>right</side>‘ to indicate whether your comment applies to the old code (left)
+or new code (right)
+3. Use ‘<note>...</note>‘ tags to wrap your review comment
+4. Use ‘<notesplit />‘ to separate different review comments
+5. Use ‘<end />‘ to end your response
+**Important**: The ‘<diff>‘ section should contain the smallest possible code fragment that clearly shows the issue.
+If multiple separate issues exist in different parts of the diff_hunk, create separate review comments for
+each with their own minimal ‘<diff>‘ snippets.
+Focus on:
+- Code defects
+- Performance issues
+- Security vulnerability
+- Maintainability and readability
+## Example Format
+<diff>
++ def example_function():
++ pass
+</diff>
+<side>right</side>
+<note>
+This function lacks documentation. Please add a docstring explaining its purpose, parameters, and return value.
+</note>
+<notesplit />
+<end />
+## Output Requirements
+- If you find issues with the code changes, provide your review comments following the format above
+- If you believe the code changes are acceptable and have no issues to report, simply output ‘<end />‘
+- Always end your response with ‘<end />‘ after all review comments (or immediately if no issues found)
+Now provide your review:
+Figure 16.Prompt for ACR Tasks of non-Agent Methods with no Code Context
+25\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+You are an expert code reviewer. Your task is to review the following code changes and provide constructive feedback
+.
+## Pull Request Information
+**Title:** {{ pr_title }}
+**Description:** {{ pr_description }}
+## Code Changes to Review
+‘‘‘diff
+{{ diff_hunk }}
+‘‘‘
+## Relevant Code Context
+{{ contexts }}
+## Instructions
+Please review the code changes above and provide detailed feedback. For each issue you identify:
+1. Use ‘<diff>...</diff>‘ tags to wrap **only the minimal code snippet ** that contains the specific issue you’re
+commenting on. Do NOT include the entire diff_hunk - extract only the relevant lines that demonstrate the
+problem.
+2. Use ‘<side>left</side>‘ or ‘<side>right</side>‘ to indicate whether your comment applies to the old code (left)
+or new code (right)
+3. Use ‘<note>...</note>‘ tags to wrap your review comment
+4. Use ‘<notesplit />‘ to separate different review comments
+5. Use ‘<end />‘ to end your response
+**Important**: The ‘<diff>‘ section should contain the smallest possible code fragment that clearly shows the issue.
+If multiple separate issues exist in different parts of the diff_hunk, create separate review comments for
+each with their own minimal ‘<diff>‘ snippets.
+Focus on:
+- Code defects
+- Performance issues
+- Security vulnerability
+- Maintainability and readability
+## Example Format
+<diff>
++ def example_function():
++ pass
+</diff>
+<side>right</side>
+<note>
+This function lacks documentation. Please add a docstring explaining its purpose, parameters, and return value.
+</note>
+<notesplit />
+<end />
+## Output Requirements
+- If you find issues with the code changes, provide your review comments following the format above
+- If you believe the code changes are acceptable and have no issues to report, simply output ‘<end />‘
+- Always end your response with ‘<end />‘ after all review comments (or immediately if no issues found)
+Now provide your review:
+Figure 17.Prompt for ACR Tasks of non-Agent Methods with Code Context
+26\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Evaluation of Agent MethodsWe selected Claude Code as the framework for evaluating Agent-based approaches.
+Leveraging its autonomous tool-use capabilities, Claude Code can independently invoke Git commands to extract Diff
+Hunks between the Base and Target versions and perform fully autonomous context retrieval. Consequently, the evaluation
+setup is streamlined: we typically clone the repository and checkout the corresponding PR version locally, eliminating
+the need for pre-built code indexing. The definition of the Code Review Agent utilized in this evaluation is illustrated in
+Figure 18, while the specific prompt used to trigger the review process is presented in Figure 19.
+To evaluate the model’s accuracy in detecting different categories of issues, we classified the review comments generated
+by the ACR methods. This classification was performed using Qwen3-235B-A22B-Instruct-2507, utilizing the prompt
+illustrated in Figure 20. We validated the efficacy of this prompt on the benchmark’s Ground Truth dataset, achieving an
+accuracy of97%.
+C.2. Additional Statistics
+Table 9.Detailed Performance Comparison (%) of Models Across Different Types
+Model Type Avg. Comments Line Semantic Line Semantic Line Semantic
+(per Patch) Recall Recall Precision Precision F1 F1
+Claude-4.5-Sonnet Agent 0.08 13.16 10.10 52.00 39.90 21.00 16.12
+Deepseek-V3.2 Agent 0.15 14.15 4.78 32.60 11.00 19.74 6.67
+GLM-4.7 Agent 0.14 9.63 4.72 23.40 11.50 13.65 6.69
+GPT-5.2 Agent 0.11 5.51 2.99 18.20 9.90 8.46 4.59
+Qwen-480B-Coder Agent 0.10 10.63 4.39 37.20 15.30 16.54 6.82
+Claude-4.5-Sonnet No context 1.72 73.29 42.86 15.00 8.70 24.90 14.46
+Deepseek-V3.2 No context 2.29 72.76 36.54 11.20 5.60 19.41 9.71
+GLM-4.7 No context 0.85 50.23 27.57 20.60 11.30 29.22 16.03
+GPT-5.2 No context 2.35 73.89 47.11 11.00 7.00 19.15 12.19
+Qwen-480B-Coder No context 1.02 58.34 27.44 20.10 9.40 29.90 14.00
+Claude-4.5-Sonnet BM25 2.17 72.56 35.75 11.80 5.80 20.30 9.98
+Deepseek-V3.2 BM25 0.89 51.69 27.38 20.50 10.90 29.36 15.59
+GLM-4.7 BM25 0.91 53.62 26.25 20.80 10.20 29.97 14.69
+GPT-5.2 BM25 1.75 74.55 43.59 15.00 8.80 24.97 14.64
+Qwen-480B-Coder BM25 2.39 72.49 45.85 10.70 6.70 18.65 11.69
+Claude-4.5-Sonnet Embedding 1.89 73.16 42.86 13.60 8.00 22.94 13.48
+Deepseek-V3.2 Embedding 2.52 72.56 36.35 10.10 5.10 17.73 8.94
+GLM-4.7 Embedding 0.87 49.63 26.98 20.20 11.00 28.71 15.63
+GPT-5.2 Embedding 2.47 72.49 47.24 10.30 6.70 18.04 11.74
+Qwen-480B-Coder Embedding 0.83 49.50 24.25 20.90 10.20 29.39 14.36
+Table 9 and Table 10 shows additional statistics in experiment.
+D. Case Study
+In this section, we present case studies illustrating correct and incorrect review comments generated by models under
+Agent-based and similarity-based retrieval settings. For each case, we provide the Repo, PR ID, File Path, along with the
+Diff Hunk in the file under review, the generated review comment, the retrieved code context (where applicable), and an
+analysis of the erroneous comments. We observe that current models continue to suffer from knowledge errors during
+code review. Furthermore, noisy data introduced by context retrieval is identified as a significant factor contributing to the
+generation of incorrect review comments.
+27\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+---
+name: code-reviewer
+description: Code review and post inline comments if issues are found
+tools: Read,Write,Bash
+model: inherit
+---
+Provide a code review.
+To do this, follow these steps precisely:
+1. Identify possible issue in MR
+We do NOT want:
+- Subjective concerns or "suggestions"
+- Style preferences not explicitly required by CLAUDE.md
+- Potential issues that "might" be problems
+- Anything requiring interpretation or judgment calls
+If you are not certain an issue is real, do not flag it. False positives erode trust and waste reviewer time.
+In addition to the above, each subagent should be told the PR title and description. This will help provide context
+regarding the author intent.
+2. For each issue found, launch parallel subagents to validate the issue. These subagents should get the PR title
+and
+description along with a description of the issue.
+The agent job is to review the issue to validate that the stated issue is truly an issue with high confidence.
+For
+example, if an issue such as "variable is not defined" was flagged, the subagent job would be to validate that is
+actually true in the code.
+3. If issues were found, post inline comments for **EACH ISSUE ** using below style:
+‘‘‘
+<<path>[file_path]</path>
+<side>left</side> or <side>right</side>
+<from>[begin_line_number]</from>
+<to>[end_line_number]</to>
+<note>[detailed_review_comment]</note>
+<notesplit />
+‘‘‘
+**Suggestions must be COMPLETE. ** If a fix requires additional changes elsewhere (e.g., renaming a variable
+requires
+updating all usages).
+For larger fixes (6+ lines, structural changes, or changes spanning multiple locations), do NOT use suggestion
+blocks.
+Instead:
+1. Describe what the issue is
+2. Explain the suggested fix at a high level
+3. Include a copyable prompt for Claude Code that the user can use to fix the issue, formatted as:
+‘‘‘
+Fix [file:line]: [brief description of issue and suggested fix]
+‘‘‘
+**IMPORTANT: Only post ONE comment per unique issue. Do not post duplicate comments. **
+Use this list when evaluating issues (these are false positives, do NOT flag):
+- Pre-existing issues
+- Something that appears to be a bug but is actually correct
+- Pedantic nitpicks that a senior engineer would not flag
+- Issues that a linter will catch (do not run the linter to verify)
+- General code quality concerns (e.g., lack of test coverage, general security issues) unless explicitly required in
+CLAUDE.md
+- Issues mentioned in CLAUDE.md but explicitly silenced in the code (e.g., via a lint ignore comment)
+Notes:
+- Create a todo list before starting.
+- You must cite and link each issue in inline comments (e.g., if referring to a CLAUDE.md, include a link to it).
+- FOR EACH ISSUE YOU FIND, POST A COMMENT FOR EACH ISSUE.
+**REMEMBER TO POST A COMMENT IF ANY ISSUES WERE FOUND **
+Figure 18.Agent Definition of Claude Code
+28\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Please conduct a code review for the changes from {base_commit}...{target_commit}, with PR title: {pr_title}
+PR description: {pr_description}
+**write the review comments to comments.txt(if the file exists, clear it first) **,
+following the format:
+<path>[file_path]</path>
+<side>left</side> or <side>right</side>
+<from>[begin_line_number]</from>
+<to>[end_line_number]</to>
+<note>[detailed_review_comment]</note>
+<notesplit />
+**If you think there are no issues with the code, there’s no need to create the file or write comments **.
+If possible, use code-reviewer first.
+Figure 19.Agent Prompt of Claude Code
+---Role---
+You are a senior software engineer specializing in code quality, security, and performance. You have extensive
+experience reviewing code changes and identifying underlying issues based on contextual feedback.
+---Task---
+Given the code diff hunk and review comment below, classify the reported issue into exactly one of the following
+categories using only the category name as your output-no explanations, punctuation, or extra text.
+Category definitions:
+- **Security Vulnerability: ** A point in your code that’s open to attack.
+- **Code Defect: ** A coding mistake that can lead to an error or unexpected behavior at runtime
+- **Maintainability and Readability: ** A maintainability issue that makes your code confusing and difficult to
+maintain.
+- **Performance:** A non-functional defect caused by inefficient algorithms, improper resource usage (e.g., memory,
+CPU, I/O), poor concurrency handling, or architectural flaws, resulting in excessive response times,
+insufficient throughput, high resource consumption, or limited scalability.
+---Diff Hunk & Review Comment---
+Diff Hunk:
+{diff_hunk}
+Review Comment:
+{review_comment}
+==============================
+Output:
+Figure 20.Prompt for Classification of Issues Found By ACR methods
+29\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Case Study: Agent-GLM good comment
+Repo: elastic/elasticsearch PR ID: #120546
+File: libs/entitlement/src/main/java/org/elasticsearch/entitlement/runtime/policy/PolicyManager.java
+Diff Hunk
+1 @@ -94,6 +99,7 @@ public class PolicyManager {
+2 List<Entitlement> agentEntitlements,
+3 Map<String, Policy> pluginPolicies,
+4 Function<Class<?>, String> pluginResolver,
+5 + Module agentsModule,
+6 Module entitlementsModule
+7 ) {
+8 this.serverEntitlements = buildScopeEntitlementsMap(requireNonNull
+(serverPolicy));
+Model Review Comments Side: RIGHT Line: 111
+There' s a potential null safety issue . Unlike other constructor parameters (e . g ., ` serverPolicy ` and
+` pluginPolicies ` which use `requireNonNull () `) , `agentsModule` is not validated . If ` null ` is passed ,
+line 328 will throw a ` NullPointerException ` when checking `requestingModule == agentsModule`.
+Consider adding `requireNonNull(agentsModule)` here for consistency and safety .
+Analysis
+Result:  Correct
+GLM does raise null pointer (NPE) issues, and it performs validation within the same file iits hallu-
+cination rate is not particularly high for intra-file cases (though cross-file analysis remains a major
+weakness). For NPE issues that can be confirmed within the current file, GLM provides relatively ac-
+curate reports (relative to Qwen, DeepSeek, etc.), with slightly fewer factual hallucinations compared
+to models like Claude.
+Figure 21.A Sample Correct Case Using Agent
+30\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Case Study: Agent-DeepSeek good comment
+Repo: kestra-io/kestra PR ID: #7191
+File: core/src/main/java/io/kestra/core/runners/pebble/functions/FileEmptyFunction.java
+Diff Hunk
+1 + if (!isFileFromCurrentExecution) {
+2 + checkIfFileFromParentExecution(context, path);
+3 + }
+4 + try (InputStream inputStream = storageInterface.get(flow.get("
+tenantId"), flow.get("namespace"), path)) {
+5 + return new String(inputStream.readAllBytes(), StandardCharsets
+.UTF_8).isBlank();
+6 + }
+7 + }
+8 +
+9 + private void checkIfFileFromParentExecution(EvaluationContext context,
+URI path) {
+10 + if (context.getVariable(TRIGGER) != null) {
+11 + // if there is a trigger of type execution, we also allow
+accessing a file from the parent execution
+12 + Map<String, String> trigger = (Map<String, String>) context.
+getVariable(TRIGGER);
+13 +
+14 + if (!isFileUriValid(trigger.get(NAMESPACE), trigger.get("
+flowId"), trigger.get("executionId"), path)) {
+15 + throw new IllegalArgumentException("Unable to read the
+file '" + path + "' as it didn't belong to the current execution");
+16 + }
+17 + }
+18 + else {
+19 + throw new IllegalArgumentException("Unable to read the file '"
++ path + "' as it didn't belong to the current execution");
+20 + }
+21 + }
+22 +
+Model Review Comments Side: RIGHT Line: 73
+DeepSeek is able to identify certain missing−handling issues , though this may also be attributed to
+the flexibility of the agent−mode context.
+Analysis
+Result:  Correct
+GLM does raise null pointer (NPE) issues, and it performs validation within the same file iits hallu-
+cination rate is not particularly high for intra-file cases (though cross-file analysis remains a major
+weakness). For NPE issues that can be confirmed within the current file, GLM provides relatively ac-
+curate reports (relative to Qwen, DeepSeek, etc.), with slightly fewer factual hallucinations compared
+to models like Claude.
+Figure 22.A Sample Correct Case Using Agent
+31\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Case Study: Agent-Claude good comment
+Repo: infiniflow/ragflow PR ID: #3212
+File: codex-rs/protocol/src/models.rs
+Diff Hunk
+1 @@ -82,7 +86,7 @@
+2 pub enum ResponseItem {
+3 output: FunctionCallOutputPayload,
+4 },
+5 CustomToolCall {
+6 - #[serde(default, skip_serializing_if = "Option::is_none")]
+7 + #[serde(skip_serializing)]
+8 id: Option<String>,
+9 #[serde(default, skip_serializing_if = "Option::is_none")]
+10 status: Option<String>,
+Model Review Comments Side: RIGHT Line: 82
+The ` id ` field in ` FunctionCallOutput ` variant is not updated with `#[ serde ( skip_serializing ) ]`, while all other
+`ResponseItem` variants with ` id ` fields have been updated to skip serialization .
+Given the PR's goal to prevent IDs from being sent to the API ( since they ' re ignored and cause latency ) , this
+appears to be an inconsistency .
+If there ' s a specific reason ` FunctionCallOutput ` IDs should be serialized while others shouldn ' t , please add a
+comment explaining why.
+Analysis
+Result:  Correct
+Claude can proactively inspect numerous call sites (a capability that Qwen notably lacks) and thor-
+oughly verify whether an issue actually exists. It is particularly sensitive to clear logical flaws, incorrect
+parameters, and inconsistencies such as new changes not being properly synchronized across relevant
+code locations.
+Figure 23.A Sample Correct Case Using Agent
+32\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Case Study: bm25-Claude good comment
+Repo: CherryHQ/cherry-studio PR ID: #5540
+File: src/renderer/src/i18n/locales/ru-ru.json
+Diff Hunk
+1 @@ -1387,7 +1387,8 @@
+2 "privacy": {
+3 "title": "Настройки приватности",
+4 "enable_privacy_mode": "Анонимная отправка отчетов об ошибках и статистики"
+5 - }
+6 + },
+7 + "defaultaides": "Встроенный"
+8 },
+9 "translate": {
+10 "any.language": "Любой язык",
+Model Review Comments Side: RIGHT Line: 1387
+**Inconsistent key naming convention **: The key \" defaultaides \" appears to be inconsistently named compared to
+other keys in the settings object which use snake_case (e . g ., \" enable_privacy_mode\") . Consider renaming to \"
+default_aides \" or following the existing naming pattern in this localization file . Additionally , verify that
+this key name matches the key used in other language files to ensure consistency across all translations .
+Context1
+1 const handleKeyDown = useCallback(
+2 (e: KeyboardEvent) => {
+3 const items = getVisibleModelItems()
+4 if (items.length === 0) return
+5
+6 if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+7 e.preventDefault()
+8 const currentIndex = items.findIndex((item) => item.key === keyboardSelectedId)
+9 let nextIndex
+10
+11 if (currentIndex === -1) {
+12 nextIndex = e.key === 'ArrowDown' ? 0 : items.length - 1
+13 } else {
+14 nextIndex =
+15 e.key === 'ArrowDown' ? (currentIndex + 1) % items.length : (currentIndex - 1 + items
+.length) % items.length
+16 }
+17
+18 const nextItem = items[nextIndex]
+19 setKeyboardSelectedId(nextItem.key)
+20 } else if (e.key === 'Enter') {
+21 e.preventDefault() \/\/ଏ ಪ ྛ ູ
+22 if (keyboardSelectedId) {
+23 const selectedItem = items.find((item) => item.key === keyboardSelectedId)
+24 if (selectedItem) {
+25 resolve(selectedItem.model)
+26 setOpen(false)
+27 }
+28 }
+29 }
+30 },
+31 [keyboardSelectedId, getVisibleModelItems, resolve, setOpen]
+32 )
+Context2
+1 import { FileType } from '@renderer\/types'
+2 import Logger from 'electron-log\/renderer'
+Analysis
+Result:  Correct
+It can accurately identify issues that are detectable solely based on the diff, such as spelling mistakes
+or code style violations.
+Figure 24.A Sample Correct Case Using BM25/Embedding Retrieval
+33\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Case Study: Agent-Claude bad comment
+Repo: infiniflow/ragflow PR ID: #7151
+File: rag/utils/infinity_conn.py
+Diff Hunk
+1 @@ -554,13 +572,40 @@ class InfinityConnection(DocStoreConnection):
+2 assert isinstance(v, list)
+3 newValue[k] = "_".join(f"{num:08x}" for num in v)
+4 elif k == "remove":
+5 - del newValue[k]
+6 - if v in [PAGERANK_FLD]:
+7 - newValue[v] = 0
+8 + if isinstance(v, str):
+9 + ty, de = clmns[v]
+10 + if ty.lower().find("cha"):
+11 + if not de:
+12 + de = ""
+13 + newValue[v] = de
+14 + else:
+15 + for kk, vv in v.items():
+16 + removeValue[kk] = vv
+17 + del newValue[k]
+Model Review Comments Side: RIGHT Line: 578
+**Potential Bug **: Incorrect string matching logic
+``` python
+if ty . lower () . find ("cha") :
+```
+The ` str . find () ` method returns `−1` when the substring is not found, and `>=0` when found. However, `−1` is
+truthy in Python, so this condition will always be True except when "cha" is found at position 0.
+This is likely causing the wrong default value to be assigned when removing fields .
+Analysis
+Result:  Incorrect
+This remains an issue with the agent: it fabricates potential problems it cannot actually verify. For
+deeply nested or excessively long call chains, even stronger models like Claude iwhile capable of
+accessing more contextican become ”polluted” by irrelevant surrounding code, leading them to raise
+suspected bugs without fully confirming whether the issues genuinely exist. Such review comments,
+based on incomplete or speculative analysis, are generally not accepted in practice.
+Figure 25.A Sample Error Case Using Agent
+34\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Case Study: Agent-GLM bad comment
+Repo: wavetermdev/waveterm PR ID: #1755
+File: frontend/app/view/preview/directorypreview.tsx
+Diff Hunk
+1 @@ -854,7 +858,7 @@ function DirectoryPreview({ model }: DirectoryPreviewProps) {
+2 });
+3
+4 const handleDropCopy = useCallback(
+5 - async (data: CommandFileCopyData, isDir) => {
+6 + async (data: CommandFileCopyData, isDir: boolean) => {
+7 try {
+8 await RpcApi.FileCopyCommand(TabRpcClient, data, { timeout: data.opts.timeout })
+;
+9 setCopyStatus(null);
+Model Review Comments Side: RIGHT Line: 82
+**Potential issue : Ignored return value from FileCopyCommand **In ` DirectoryPreview `, the `handleDropCopy` callback function doesn' t check the return value :
+If the return value indicates success / failure , you should check it before clearing the copy status .
+Analysis
+Result:  Incorrect
+There are clearly many nitpicky issues, and itns evident that sufficient validation hasnnt been performed
+ieven by an agent. While Claude also has its share of nitpicky problems, GLM notably lacks thorough
+checking and verification; it largely relies on guessing the context rather than actively invoking tools
+to examine the content.
+Figure 26.A Sample Error Case Using Agent
+35\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Case Study: Agent-DeepSeek bad comment
+Repo: elastic/elasticsearch PR ID: #124403
+File: server/src/main/java/org/elasticsearch/index/codec/tsdb/es819/ES819TSDBDocV aluesProducer.java
+Diff Hunk
+1 + if (disi.advanceExact(firstDoc) == false) {
+2 + assert false : "nullsFiltered is true, but doc [" + firstDoc + "] has no
+value";
+3 + throw new IllegalStateException("nullsFiltered is true, but doc [" +
+firstDoc + "] has no value");
+4 + }
+5 + if (jumpDISI == null) {
+6 + jumpDISI = new IndexedDISI(
+7 + data,
+8 + entry.docsWithFieldOffset,
+9 + entry.docsWithFieldLength,
+10 + entry.jumpTableEntryCount,
+11 + entry.denseRankPower,
+12 + entry.numValues
+13 + );
+14 + }
+15 + final int lastDoc = docs.get(docs.count() - 1);
+16 + if (jumpDISI.advanceExact(lastDoc) == false) {
+17 + assert false : "nullsFiltered is true, but doc [" + lastDoc + "] has no
+value";
+18 + throw new IllegalStateException("nullsFiltered is true, but doc [" +
+lastDoc + "] has no value");
+19 + }
+Model Review Comments Side: RIGHT Line: 1504
+**Issue: Potential resource leak in jumpDISI field **
+The `jumpDISI` field is lazily initialized but never cleaned up. Since this is an inner class that might be
+reused across multiple reads , this could lead to resource accumulation . Consider:
+1. Adding a cleanup method to release the `jumpDISI` resource
+2. Making `jumpDISI` local to the method instead of a field
+3. Ensuring proper lifecycle management if this object is reused
+**Suggested fix:**Make `jumpDISI` a local variable within the `tryReadDoubles` method instead of a field , or add proper cleanup
+mechanism.
+```
+Analysis
+Result:  Incorrect
+Qwen is notably prone to factual hallucinations ifor instance, it has previously flagged NPE (null
+pointer exception) issues even when the line immediately above in the diff clearly contained a null check,
+or claimed an ‘if‘ block lacked an ‘else‘ despite the diff showing a complete ‘if-else‘ structure. In this
+case, the reported issue about null handling appears to stem from insufficient verification, leading to
+an unwarranted alert. Analysis of Agent-Qwen ns tool usage reveals that it struggles with scenarios in-
+volving multiple call sites or deeply nested declarations: when multiple locations need checking, Qwen
+often examines only 1⚶2 of them and then extrapolates a conclusion ieither falsely assuming safety or
+incorrectly inferring a problem without full context; similarly, when faced with complex declarations, it
+tends to give up after a few unsuccessful tool calls and defaults to guessing a potential issue exists. This
+suggests Qwen lacks both robust tool-calling capability and a clear understanding of when to use which
+tooliwhereas Claude might directly perform a ‘search‘ for efficient context retrieval, Qwen frequently
+resorts to repetitive and less effective ‘find‘ + ‘read‘ sequences.
+Figure 27.A Sample Error Case Using Agent
+36\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Case Study: bm25-Claude bad comment
+Repo: nextcloud/server PR ID: #52846
+File: lib/public/AppFramework/App.php
+Diff Hunk
+1 @@ -47,7 +48,7 @@ class App {
+2 * @since 6.0.0
+3 *\/
+4 public function __construct(string $appName, array $urlParams = []) {
+5 - $runIsSetupDirectly = \OC::$server->getConfig()->getSystemValueBool('debug')
+6 + $runIsSetupDirectly = \OCP\Server::get(IConfig::class)->getSystemValueBool('debug')
+7 && !ini_get('zend.exception_ignore_args');
+8
+9 if ($runIsSetupDirectly) {
+Model Review Comments Side: RIGHT Line: 50
+The new code is missing the `IConfig` import \/ use statement . While the change correctly moves from `\\ OC::\
+$server ` to `\\ OCP\\Server:: get () ` (which aligns with the PR goal of using OCP instead of OC), ensure that `use
+OCP\\IConfig;` is added at the top of the file if not already present . Otherwise, the fully qualified class name
+`\\ OCP\\IConfig:: class ` should be used.
+Context1
+1 ,\n"nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;")
+Context2
+1 function()
+Context3
+1 33319:
+Analysis
+Result:  Incorrect
+The hallucinations in BM25 stem primarily from inaccurate context retrieval, which has little to do with
+the diff snippet itself. Moreover , the retrieved content often does not align with the specific issue the
+model is trying to address. In such cases, the model ns reasoning capability has less impact than the
+accuracy of the retrieval itself iessentially resulting in the same limitations as having no retrieval at
+all (empirical observation shows that embedding-based retrieval exhibits similar characteristics). Due
+to the low precision of the retrieved context, the additional context provides virtually no meaningful
+support for diff review, effectively degrading the process to a retrieval-free scenario. Consequently, only
+issues that can be identified based solely on the diff isuch as spelling errors or code style violations i
+are reliably caught. This also highlights the advantage of agent-based approaches that autonomously
+query relevant context on demand, rather than relying on static, potentially irrelevant pre-retrieved
+snippets.
+Figure 28.A Sample Error Case Using BM25/Embedding Retrieval
+37\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Case Study: bm25-GLM bad comment
+Repo: CherryHQ/cherry-studio PR ID: #5540
+File: src/renderer/src/pages/settings/DataSettings/DataSettings.tsx
+Diff Hunk
+1 @@ -62,6 +63,14 @@ const DataSettings: FC = () => {
+2 p-id="2965"><\/path>
+3 <\/svg>
+4 )
+5 + const AidesIcon = () => (
+6 + <svg viewBox="0 0 100 100" version="1.1" xmlns="http:\/\/www.w3.org\/2000\/svg" p-id="1234"
+width="16" height="16">
+7 + <path
+8 + d="M50 10 L61.2 37.3 L87.9 38.2 L66 57.3 L71.2 84.7 L50 66.1 L28.8 84.7 L34 57.3 L12.1
+38.2 L38.8 37.3 Z"
+9 + fill="#FFD700"
+10 + p-id="1235"><\/path>
+11 + <\/svg>
+12 + );
+13
+14 const menuItems = [
+15 { key: 'divider_0', isDivider: true, text: t('settings.data.divider.basic') },
+Model Review Comments Side: RIGHT Line: 66
+The `p−id` attributes (` p−id="1234"` and `p−id="1235"`) appear to be artifacts from an icon library ( like
+iconfont ) and are not standard SVG attributes . They serve no functional purpose in this custom component and
+should be removed for cleaner code. Additionally , consider adding accessibility attributes such as ` aria − label ` or
+` role ="img"` if this icon conveys meaningful information to users .
+Context1
+1 const handleKeyDown = useCallback(
+2 (e: KeyboardEvent) => {
+3 const items = getVisibleModelItems()
+4 if (items.length === 0) return
+5
+6 if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+7 e.preventDefault()
+8 const currentIndex = items.findIndex((item) => item.key === keyboardSelectedId)
+9 let nextIndex
+10
+11 if (currentIndex === -1) {
+12 nextIndex = e.key === 'ArrowDown' ? 0 : items.length - 1
+13 } else {
+14 nextIndex =
+15 e.key === 'ArrowDown' ? (currentIndex + 1) % items.length : (currentIndex - 1 + items
+.length) % items.length
+16 }
+17
+18 const nextItem = items[nextIndex]
+19 setKeyboardSelectedId(nextItem.key)
+20 } else if (e.key === 'Enter') {
+21 e.preventDefault()
+22 if (keyboardSelectedId) {
+23 const selectedItem = items.find((item) => item.key === keyboardSelectedId)
+24 if (selectedItem) {
+25 resolve(selectedItem.model)
+26 setOpen(false)
+27 }
+28 }
+29 }
+30 },
+31 [keyboardSelectedId, getVisibleModelItems, resolve, setOpen]
+32 )
+33
+34 useEffect(() => {
+35 window.addEventListener('keydown', handleKeyDown)
+36 return () => window.removeEventListener('keydown', handleKeyDown)
+37 }, [handleKeyDown])
+38
+39 useEffect(() => {
+40 setKeyboardSelectedId('')
+41 }, [searchText])
+42
+43 const selectedKeys = keyboardSelectedId ? [keyboardSelectedId] : model ? [getModelUniqId(model)
+] : []
+Context2
+1 )
+Context3
+1 import { FileType } from '@renderer\/types'
+2 import Logger from 'electron-log\/renderer'
+Analysis
+Result:  Incorrect
+Due to inaccurate retrieved context, GLM is unable to make effective judgments about the issue.
+Figure 29.A Sample Error Case Using BM25/Embedding Retrieval
+38\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Case Study: bm25-GPT bad comment
+Repo: wavetermdev/waveterm PR ID: #1998
+File: pkg/remote/fileshare/s3fs/s3fs.go
+Diff Hunk
+1 + }, func(obj *types.Object) (bool, error) {
+2 + log.Printf("Deleting object %v:%v", bucket, *obj.Key)
+3 + objects = append(objects, types.ObjectIdentifier{Key: obj.Key})
+4 + return true, nil
+5 })
+6 if err != nil {
+7 + log.Printf("Error listing objects: %v", err)
+8 return err
+9 }
+Model Review Comments Side: RIGHT Line: 723
+Potential nil dereference : ` *obj. Key` assumes `Key` is always non−nil . While S3 usually provides it , the SDK type
+is a pointer ; defensive code should handle ` obj == nil ` or `obj . Key == nil ` to avoid panics ( especially if `
+listFilesPrefix ` can call the callback with unexpected values ) .
+Context1
+1 }
+Context2
+1 function convertElemToTag(elem: VDomElem, model: VDomModel): JSX.Element | string {
+2 if (elem == null) {
+3 return null;
+4 }
+5 if (elem.tag == TextTag) {
+6 return elem.text;
+7 }
+8 return React.createElement(VDomTag, { key: elem.waveid, elem, model });
+9 }
+10
+11 function isObject(v: any): boolean {
+12 return v != null && !Array.isArray(v) && typeof v === "object";
+13 }
+14
+15 function isArray(v: any): boolean {
+16 return Array.isArray(v);
+17 }
+18
+19 function resolveBinding(binding: VDomBinding, model: VDomModel): [any, string[]] {
+20 const bindName = binding.bind;
+21 if (bindName == null || bindName == "") {
+22 return [null, []];
+23 }
+24 // for now we only recognize $.[atomname] bindings
+25 if (!bindName.startsWith("$.")) {
+26 return [null, []];
+27 }
+28 const atomName = bindName.substring(2);
+29 if (atomName == "") {
+30 return [null, []];
+31 }
+32 const atom = model.getAtomContainer(atomName);
+33 if (atom == null) {
+34 return [null, []];
+35 }
+36 return [atom.val, [atomName]];
+37 }
+38
+39 type GenericPropsType = { [key: string]: any };
+40
+41 // returns props, and a set of atom keys used in the props
+Context3
+1 return
+Analysis
+Result:  Incorrect
+Due to inaccurate retrieved context, GPT is unable to make effective judgments about the issue.
+Figure 30.A Sample Error Case Using BM25/Embedding Retrieval
+39\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Case Study: embedding-Claude bad comment
+Repo: juspay/hyperswitch PR ID: #9130
+File: crates/hyperswitch_connectors/src/connectors/checkout/transformers.rs
+Diff Hunk
+1 + PaymentMethodToken::GooglePayDecrypt(google_pay_decrypted_data) => {
+2 + let token = google_pay_decrypted_data
+3 + .application_primary_account_number
+4 + .clone();
+5 + let expiry_month = google_pay_decrypted_data
+6 + .get_expiry_month()
+7 + .change_context(errors::ConnectorError::InvalidDataFormat {
+8 + field_name: "payment_method_data.card.card_exp_month",
+9 + })?;
+Model Review Comments Side: RIGHT Line: 342
+**Unnecessary clone**: The `application_primary_account_number` field is being cloned here , but it appears to be
+moved into the `GooglePayPredecrypt` struct . Consider taking ownership directly or using a reference if the data
+is needed elsewhere . If the field type is ` String ` or similar , this clone might be avoidable .
+Context1
+1 {
+2 Some(payment_method_token) => match payment_method_token {
+3 PaymentMethodToken::GooglePayDecrypt(decrypt_data) => {
+4 Self::try_from((item, decrypt_data, google_pay_data))
+5 }
+6 PaymentMethodToken::Token(_) => {
+7 Err(unimplemented_payment_method!(
+8 "Apple Pay",
+9 "Manual",
+10 "Cybersource"
+11 ))?
+12 }
+13 PaymentMethodToken::PazeDecrypt(_) => {
+14 Err(unimplemented_payment_method!("Paze", "Cybersource"))
+?
+15 }
+16 PaymentMethodToken::ApplePayDecrypt(_) => {
+17 Err(unimplemented_payment_method!(
+18 "Apple Pay",
+19 "Simplified",
+20 "Cybersource"
+21 ))?
+22 }
+23 },
+24 None => Self::try_from((item, google_pay_data)),
+25 }
+Context2
+1 PaymentMethodToken::GooglePayDecrypt(_) => {
+2 Err(unimplemented_payment_method!("Google Pay", "Checkout"))?
+3 }
+4 }
+Context3
+1 {
+2 WalletData::GooglePay(data) => Ok(PaymentInstrument::Googlepay(WalletPayment {
+3 payment_type: PaymentType::Encrypted,
+4 wallet_token: Secret::new(
+5 data.tokenization_data
+6 .get_encrypted_google_pay_token()
+7 .change_context(errors::ConnectorError::MissingRequiredField {
+8 field_name: "gpay wallet_token",
+9 })?,
+10 ),
+11 ..WalletPayment::default()
+12 })),
+13 WalletData::ApplePay(data) => Ok(PaymentInstrument::Applepay(WalletPayment {
+14 payment_type: PaymentType::Encrypted,
+15 wallet_token: data.get_applepay_decoded_payment_data()?,
+16 ..WalletPayment::default()
+17 })),
+Analysis
+Result:  Incorrect
+Due to inaccurate retrieved context, Claude is unable to make effective judgments about the issue.
+Figure 31.A Sample Error Case Using BM25/Embedding Retrieval
+40\n\nAACR-Bench: Evaluating Automatic Code Review with Holistic Repository-Level Context
+Table 10.Performance Comparison (%) of Different Models and Methods across Four Issue Categories
+Model Method Security Vuln. Code Defect Performance Maint. & Read.
+Rec Prec F1 Rec Prec F1 Rec Prec F1 Rec Prec F1
+Claude-4.5-Sonnet Agent 11.76 17.39 14.04 17.07 44.02 24.60 9.28 36.00 14.75 11.30 37.60 17.38
+Deepseek-V3.2 Agent 2.08 2.17 2.13 6.71 13.65 8.99 2.65 5.88 3.66 3.68 9.69 5.33
+GLM-4.7 Agent 4.88 4.08 4.44 6.72 14.29 9.14 8.42 20.00 11.85 4.67 8.43 6.01
+GPT-5.2 Agent 4.00 7.14 5.13 3.40 8.36 4.84 2.59 17.65 4.51 2.56 12.31 4.24
+Qwen-480B-Coder Agent 4.17 13.33 6.35 6.46 18.22 9.53 4.00 16.67 6.45 3.49 11.31 5.33
+Claude-4.5-Sonnet No context 45.28 4.81 8.70 46.40 15.63 23.38 53.85 14.13 22.38 36.58 5.30 9.26
+Deepseek-V3.2 No context 28.30 3.45 6.15 39.63 10.35 16.42 43.59 11.02 17.59 32.43 3.28 5.96
+GLM-4.7 No context 37.74 9.57 15.27 28.77 17.82 22.01 35.04 20.71 26.03 23.96 7.08 10.93
+GPT-5.2 No context 56.60 2.92 5.56 50.78 13.92 21.85 47.86 9.82 16.30 42.01 4.46 8.07
+Qwen-480B-Coder No context 26.42 7.87 12.12 29.90 16.99 21.67 30.77 14.17 19.41 24.12 5.61 9.10
+Claude-4.5-Sonnet BM25 47.17 4.84 8.77 48.38 15.92 23.95 48.72 12.28 19.62 36.90 5.32 9.31
+Deepseek-V3.2 BM25 33.96 3.97 7.11 39.49 10.80 16.96 36.75 9.39 14.96 31.47 3.41 6.15
+GLM-4.7 BM25 30.19 7.08 11.47 29.20 18.00 22.27 30.77 18.95 23.45 24.44 6.88 10.74
+GPT-5.2 BM25 56.60 2.97 5.64 49.08 13.27 20.89 47.01 9.79 16.20 41.05 4.26 7.71
+Qwen-480B-Coder BM25 20.75 6.92 10.38 28.21 18.94 22.66 24.79 13.62 17.58 24.76 6.31 10.06
+Claude-4.5-Sonnet Embedding 45.28 4.45 8.11 46.83 14.36 21.98 48.72 10.65 17.48 37.06 4.93 8.70
+Deepseek-V3.2 Embedding 32.08 3.62 6.50 40.48 9.99 16.02 42.74 8.40 14.04 30.83 2.81 5.15
+GLM-4.7 Embedding 30.19 7.51 12.03 29.06 17.04 21.48 33.33 17.73 23.15 23.16 7.03 10.78
+GPT-5.2 Embedding 58.49 2.93 5.58 51.62 13.43 21.31 48.72 8.85 14.98 41.05 4.18 7.59
+Qwen-480B-Coder Embedding 22.64 10.26 14.12 26.52 18.23 21.61 27.35 16.75 20.78 21.25 5.97 9.32
+41
